@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ModuleType, TrackType, MeshObjectItem } from './types';
+import { ModuleType, TrackType, MeshObjectItem, IngestionResult, SeriesCard } from './types';
 import { Header } from './components/Header';
 import { RadosView } from './modules/rados/RadosView';
 import { DesignStudioView } from './modules/design/DesignStudioView';
+import { ImportWizardView } from './modules/rados/ImportWizardView';
 
 export const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState<ModuleType>('Rados');
@@ -10,6 +11,11 @@ export const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState<boolean>(false);
+
+  // Ingested study & series state across modules
+  const [activeStudy, setActiveStudy] = useState<IngestionResult | null>(null);
+  const [activeSeries, setActiveSeries] = useState<SeriesCard | null>(null);
+  const [initialPreset, setInitialPreset] = useState<{ minHu: number; maxHu: number; quality: string } | null>(null);
 
   // Mesh transferred from Rados to Design studio
   const [designMesh, setDesignMesh] = useState<MeshObjectItem | null>(null);
@@ -23,20 +29,60 @@ export const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // Fullscreen F11 listener
-  const toggleFullscreen = useCallback(() => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
+  // Fullscreen cross-browser handler and sync
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      const isCurrentlyFs = Boolean(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+
+      if (!isCurrentlyFs) {
+        const el = document.documentElement as any;
+        if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+          await el.webkitRequestFullscreen();
+        } else if (el.mozRequestFullScreen) {
+          await el.mozRequestFullScreen();
+        } else if (el.msRequestFullscreen) {
+          await el.msRequestFullscreen();
+        }
+      } else {
+        const doc = document as any;
+        if (doc.exitFullscreen) {
+          await doc.exitFullscreen();
+        } else if (doc.webkitExitFullscreen) {
+          await doc.webkitExitFullscreen();
+        } else if (doc.mozCancelFullScreen) {
+          await doc.mozCancelFullScreen();
+        } else if (doc.msExitFullscreen) {
+          await doc.msExitFullscreen();
+        }
       }
-      setIsFullscreen(false);
+    } catch (err) {
+      console.error('Fullscreen toggle error:', err);
     }
   }, []);
 
   useEffect(() => {
+    const handleFsChange = () => {
+      const isFs = Boolean(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      setIsFullscreen(isFs);
+    };
+
+    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
+    document.addEventListener('mozfullscreenchange', handleFsChange);
+    document.addEventListener('MSFullscreenChange', handleFsChange);
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F11') {
         e.preventDefault();
@@ -44,7 +90,14 @@ export const App: React.FC = () => {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
+      document.removeEventListener('mozfullscreenchange', handleFsChange);
+      document.removeEventListener('MSFullscreenChange', handleFsChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [toggleFullscreen]);
 
   return (
@@ -65,6 +118,18 @@ export const App: React.FC = () => {
 
       {/* Main View Area */}
       <main className="flex-1 w-full overflow-hidden relative">
+        {activeModule === 'Datum' && (
+          <ImportWizardView
+            onCompleteImport={(study, series, preset) => {
+              setActiveStudy(study);
+              setActiveSeries(series);
+              setInitialPreset(preset);
+              setActiveModule('Rados');
+            }}
+            onCancel={() => setActiveModule('Rados')}
+          />
+        )}
+
         {activeModule === 'Rados' && (
           <RadosView
             onNavigateModule={setActiveModule}
@@ -72,6 +137,10 @@ export const App: React.FC = () => {
               setDesignMesh(mesh);
               setActiveModule('Design');
             }}
+            initialStudy={activeStudy}
+            initialSeries={activeSeries}
+            initialPreset={initialPreset}
+            onOpenImportWizard={() => setActiveModule('Datum')}
           />
         )}
 
@@ -82,9 +151,9 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeModule !== 'Rados' && activeModule !== 'Design' && (
+        {activeModule !== 'Datum' && activeModule !== 'Rados' && activeModule !== 'Design' && (
           <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
-            <div className="p-8 rounded-2xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 shadow-xl max-w-md flex flex-col items-center gap-3">
+            <div className="neu-convex p-8 rounded-3xl border border-white/60 dark:border-white/5 shadow-2xl max-w-md flex flex-col items-center gap-3">
               <span className="text-sm font-bold text-[#0284C7]">
                 {activeModule} Module
               </span>
@@ -94,7 +163,7 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveModule('Rados')}
-                className="tactile-rubber px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#0284C7] hover:bg-sky-700 shadow-md shadow-sky-600/30 cursor-pointer mt-1"
+                className="tactile-rubber neu-primary px-5 py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 cursor-pointer mt-1"
               >
                 Return to Rados Workstation
               </button>

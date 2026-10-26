@@ -2,6 +2,23 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { Maximize2, Minimize2 } from 'lucide-react';
 import { Volume3DData, MaskLayer, CadToolType, SeedPoint } from '../../types';
 
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const clean = hex.replace('#', '');
+  if (clean.length === 3) {
+    return {
+      r: parseInt(clean[0] + clean[0], 16),
+      g: parseInt(clean[1] + clean[1], 16),
+      b: parseInt(clean[2] + clean[2], 16),
+    };
+  }
+  const num = parseInt(clean, 16);
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255,
+  };
+}
+
 interface Viewport2DProps {
   plane: 'coronal' | 'axial' | 'sagittal';
   volumeData: Volume3DData | null;
@@ -19,6 +36,12 @@ interface Viewport2DProps {
   isInverted: boolean;
   masks: MaskLayer[];
   seedPoints: SeedPoint[];
+  thresholdPreview?: {
+    active: boolean;
+    minHu: number;
+    maxHu: number;
+    color?: string;
+  } | null;
   onSliceClickVoxel?: (voxel: [number, number, number], hu: number) => void;
   isMaximized: boolean;
   onToggleMaximize: () => void;
@@ -41,12 +64,30 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
   isInverted,
   masks,
   seedPoints,
+  thresholdPreview,
   onSliceClickVoxel,
   isMaximized,
   onToggleMaximize,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Exact container pixel dimensions for maximum window population without cutting or warping
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerSize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   // Pan and zoom states
   const [zoom, setZoom] = useState<number>(1.0);
@@ -59,15 +100,30 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
   const [anglePoints, setAnglePoints] = useState<[number, number][]>([]);
   const [cobbPoints, setCobbPoints] = useState<[number, number][]>([]);
 
-  // Orientation themes
+  // Orientation themes with +5% rich color accents
   const theme = useMemo(() => {
     switch (plane) {
       case 'coronal':
-        return { label: 'Coronal', color: '#8B5CF6', borderClass: 'border-purple-600/60' };
+        return {
+          label: 'Coronal',
+          color: '#8B5CF6',
+          borderClass: 'border-purple-500/70 shadow-[0_0_12px_rgba(139,92,246,0.22)]',
+          badgeBg: 'bg-purple-950/70 border-purple-500/40 text-purple-300',
+        };
       case 'axial':
-        return { label: 'Axial', color: '#06B6D4', borderClass: 'border-cyan-500/60' };
+        return {
+          label: 'Axial',
+          color: '#06B6D4',
+          borderClass: 'border-cyan-500/70 shadow-[0_0_12px_rgba(6,182,212,0.22)]',
+          badgeBg: 'bg-cyan-950/70 border-cyan-500/40 text-cyan-300',
+        };
       case 'sagittal':
-        return { label: 'Sagittal', color: '#F59E0B', borderClass: 'border-amber-500/60' };
+        return {
+          label: 'Sagittal',
+          color: '#F59E0B',
+          borderClass: 'border-amber-500/70 shadow-[0_0_12px_rgba(245,158,11,0.22)]',
+          badgeBg: 'bg-amber-950/70 border-amber-500/40 text-amber-300',
+        };
     }
   }, [plane]);
 
@@ -178,16 +234,53 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
         let gray = Math.round(norm * 255);
         if (isInverted) gray = 255 - gray;
 
+        let r = gray;
+        let g = gray;
+        let b = gray;
+
+        // 1. Live Threshold Preview Overlay
+        if (thresholdPreview?.active && voxelVal >= thresholdPreview.minHu && voxelVal <= thresholdPreview.maxHu) {
+          const tColor = thresholdPreview.color ? hexToRgb(thresholdPreview.color) : { r: 2, g: 132, b: 199 };
+          const a = 0.55;
+          r = Math.round(r * (1 - a) + tColor.r * a);
+          g = Math.round(g * (1 - a) + tColor.g * a);
+          b = Math.round(b * (1 - a) + tColor.b * a);
+        }
+
+        // 2. Visible Masks Overlay
+        if (masks && masks.length > 0) {
+          for (let m = 0; m < masks.length; m++) {
+            const mask = masks[m];
+            if (!mask.visible) continue;
+
+            let inMask = false;
+            if (mask.data) {
+              inMask = mask.data[volIdx] === 1;
+            } else if (mask.min_hu !== undefined && mask.max_hu !== undefined) {
+              inMask = voxelVal >= mask.min_hu && voxelVal <= mask.max_hu;
+            }
+
+            if (inMask) {
+              const mColor = hexToRgb(mask.color || '#0284C7');
+              const a = 0.45;
+              r = Math.round(r * (1 - a) + mColor.r * a);
+              g = Math.round(g * (1 - a) + mColor.g * a);
+              b = Math.round(b * (1 - a) + mColor.b * a);
+              break;
+            }
+          }
+        }
+
         const pIdx = (py * sliceWidth + px) * 4;
-        pixels[pIdx] = gray;
-        pixels[pIdx + 1] = gray;
-        pixels[pIdx + 2] = gray;
+        pixels[pIdx] = r;
+        pixels[pIdx + 1] = g;
+        pixels[pIdx + 2] = b;
         pixels[pIdx + 3] = 255;
       }
     }
 
     ctx.putImageData(imgData, 0, 0);
-  }, [volumeData, plane, sliceIndex, totalSlices, sliceWidth, sliceHeight, windowCenter, windowWidth, isInverted]);
+  }, [volumeData, plane, sliceIndex, totalSlices, sliceWidth, sliceHeight, windowCenter, windowWidth, isInverted, thresholdPreview, masks]);
 
   useEffect(() => {
     renderSlice();
@@ -317,6 +410,28 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
     return `${pos.toFixed(2)} mm`;
   }, [volumeData, plane, sliceIndex]);
 
+  // Maximum window populating bounding box with exact physical aspect ratio
+  const fitSize = useMemo(() => {
+    if (!containerSize.width || !containerSize.height || !physicalWidthMm || !physicalHeightMm) {
+      return { width: '100%', height: '100%' };
+    }
+    const containerAspect = containerSize.width / containerSize.height;
+    const sliceAspect = physicalWidthMm / physicalHeightMm;
+
+    let w: number;
+    let h: number;
+    if (containerAspect > sliceAspect) {
+      // Container is wider than slice: slice height occupies 100% of container height
+      h = containerSize.height;
+      w = h * sliceAspect;
+    } else {
+      // Container is taller than slice: slice width occupies 100% of container width
+      w = containerSize.width;
+      h = w / sliceAspect;
+    }
+    return { width: `${Math.round(w)}px`, height: `${Math.round(h)}px` };
+  }, [containerSize, physicalWidthMm, physicalHeightMm]);
+
   return (
     <div
       ref={containerRef}
@@ -324,17 +439,16 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onContextMenu={(e) => e.preventDefault()}
-      className={`relative w-full h-full bg-[#000000] overflow-hidden select-none border ${theme.borderClass} flex items-center justify-center`}
+      className={`relative w-full h-full bg-[#000000] overflow-hidden select-none border ${theme.borderClass} flex items-center justify-center neu-pressed`}
     >
       {/* Top Left Orientation Badge */}
-      <div className="absolute top-2 left-2 z-20 flex items-center gap-2 pointer-events-none">
+      <div className="absolute top-2.5 left-2.5 z-20 flex items-center gap-2 pointer-events-none">
         <span
-          style={{ color: theme.color }}
-          className="font-bold text-xs tracking-wide uppercase bg-black/60 px-2 py-0.5 rounded border border-white/10"
+          className={`font-extrabold text-[11px] tracking-wider uppercase px-2.5 py-0.5 rounded-lg border backdrop-blur-md shadow-md ${theme.badgeBg}`}
         >
           {theme.label}
         </span>
-        <span className="text-[11px] font-semibold text-white/70 bg-black/50 px-1.5 py-0.5 rounded">
+        <span className="text-[11px] font-bold text-white/90 bg-black/60 px-2 py-0.5 rounded-lg border border-white/10 shadow-sm backdrop-blur-sm">
           {sliceIndex + 1} / {totalSlices}
         </span>
       </div>
@@ -343,27 +457,28 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
       <button
         type="button"
         onClick={onToggleMaximize}
-        className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white/80 hover:text-white border border-white/10 tactile-rubber cursor-pointer"
+        className="absolute top-2.5 right-2.5 z-20 p-1.5 rounded-xl bg-black/60 hover:bg-black/90 text-white/80 hover:text-white border border-white/15 tactile-rubber cursor-pointer backdrop-blur-sm shadow-md"
         title={isMaximized ? 'Restore Quadrant' : 'Maximize Quadrant'}
       >
         {isMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
       </button>
 
       {/* Bottom Right Physical MM Position */}
-      <div className="absolute bottom-2 right-2 z-20 text-[11px] font-semibold text-sky-400 bg-black/60 px-2 py-0.5 rounded border border-sky-500/20 pointer-events-none">
+      <div className="absolute bottom-2.5 right-2.5 z-20 text-[11px] font-bold text-sky-400 bg-black/70 px-2.5 py-0.5 rounded-lg border border-sky-500/30 pointer-events-none backdrop-blur-sm shadow-md">
         {currentMmPosition}
       </div>
 
-      {/* Canvas Viewport with 0.78 Zoom Buffer for Zero Clipping */}
+      {/* Maximum Window Populated Canvas Viewport with Exact Aspect Ratio and Zero Warping/Cutting */}
       <div
         style={{
-          transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom * 0.78}) rotate(${rotationDeg}deg) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`,
-          aspectRatio: `${physicalWidthMm} / ${physicalHeightMm}`,
+          width: fitSize.width,
+          height: fitSize.height,
+          transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom}) rotate(${rotationDeg}deg) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`,
           transition: isDragging ? 'none' : 'transform 0.1s ease-out',
         }}
-        className="relative max-w-[90%] max-h-[90%] flex items-center justify-center shadow-2xl"
+        className="relative flex items-center justify-center shadow-2xl"
       >
-        <canvas ref={canvasRef} className="w-full h-full object-contain pointer-events-none" />
+        <canvas ref={canvasRef} className="w-full h-full pointer-events-none" />
 
         {/* 1px Continuous Synchronized Crosshair Lines */}
         {activeTool === 'crosshair' && (

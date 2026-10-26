@@ -79,17 +79,17 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="relative w-full h-[58px] px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-[#F8FAFC] dark:bg-[#090D16] z-40 shrink-0 select-none">
       {/* Left: Branding & Track Switcher */}
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-[#0284C7] flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-sky-500/20">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl neu-primary flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-sky-500/25">
             MD
           </div>
-          <span className="font-bold text-base tracking-tight text-slate-900 dark:text-white">
+          <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
             MEDAM
           </span>
         </div>
 
-        {/* Track Switcher */}
-        <div className="flex items-center bg-slate-200/70 dark:bg-slate-800/60 p-1 rounded-xl gap-0.5 border border-slate-300/40 dark:border-slate-700/40">
+        {/* 100% Neumorphic Track Switcher */}
+        <div className="flex items-center neu-pressed p-1 rounded-2xl gap-1">
           {(['Medical', 'Industrial', 'Creative'] as TrackType[]).map((track) => {
             const isActive = activeTrack === track;
             return (
@@ -97,9 +97,9 @@ export const Header: React.FC<HeaderProps> = ({
                 key={track}
                 type="button"
                 onClick={() => onSelectTrack(track)}
-                className={`tactile-rubber px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                className={`tactile-rubber px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-[#0284C7] text-white shadow-sm'
+                    ? 'neu-primary text-white shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                 }`}
               >
@@ -110,7 +110,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Center: Rotary Cylinder Flowbar */}
+      {/* Center: Rotary Cylinder Flowbar with +5% Chromatic Accents */}
       <div className="relative flex items-center justify-center overflow-hidden h-full max-w-2xl px-6">
         <div className="flex items-center gap-1.5" style={{ perspective: '800px' }}>
           {MODULES.map((mod, idx) => {
@@ -125,6 +125,14 @@ export const Header: React.FC<HeaderProps> = ({
             const scale = isActive ? 1.05 : Math.max(0.85, 1 - distance * 0.05);
 
             const Icon = mod.icon;
+            const iconTint =
+              mod.id === 'Datum' ? 'text-emerald-500' :
+              mod.id === 'Rados' ? 'text-[#0284C7]' :
+              mod.id === 'Design' ? 'text-purple-500' :
+              mod.id === 'FEA' ? 'text-amber-500' :
+              mod.id === 'Slicer' ? 'text-rose-500' :
+              mod.id === 'Print Factory' ? 'text-cyan-500' :
+              mod.id === 'I 5.0' ? 'text-indigo-400' : 'text-slate-400';
 
             return (
               <button
@@ -137,16 +145,16 @@ export const Header: React.FC<HeaderProps> = ({
                   transition: 'all 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
                   transformStyle: 'preserve-3d',
                 }}
-                className={`tactile-rubber relative px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap cursor-pointer ${
+                className={`tactile-rubber relative px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold whitespace-nowrap cursor-pointer ${
                   isActive
-                    ? 'text-[#0284C7] dark:text-[#38BDF8] bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                    ? 'neu-convex text-[#0284C7] dark:text-[#38BDF8] border border-sky-300 dark:border-sky-800 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 neu-btn'
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-[#0284C7] dark:text-[#38BDF8]' : 'text-slate-400'}`} />
+                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-[#0284C7] dark:text-[#38BDF8]' : iconTint}`} />
                 <span>{mod.label}</span>
                 {isActive && (
-                  <span className="absolute -bottom-[9px] left-3 right-3 h-[2.5px] bg-[#0284C7] dark:bg-[#38BDF8] rounded-full shadow-sm shadow-sky-500/50" />
+                  <span className="absolute -bottom-[9px] left-3 right-3 h-[2.5px] bg-gradient-to-r from-[#0284C7] to-cyan-400 rounded-full shadow-sm shadow-sky-500/50" />
                 )}
               </button>
             );
@@ -154,14 +162,14 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right: Utility icon buttons (rendered once only) */}
-      <div className="flex items-center gap-1.5">
+      {/* Right: Utility icon buttons with 100% Neumorphic Origin UI buttons */}
+      <div className="flex items-center gap-2">
         {/* Theme Toggle */}
         <button
           type="button"
           onClick={onToggleTheme}
           title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          className="tactile-rubber p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800/70 border border-transparent hover:border-slate-300 dark:hover:border-slate-700"
+          className="tactile-rubber neu-btn p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
         >
           {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
         </button>
@@ -171,9 +179,9 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           onClick={onToggleFullscreen}
           title={isFullscreen ? 'Exit Fullscreen (F11)' : 'Fullscreen Application Mode (F11)'}
-          className="tactile-rubber p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800/70 border border-transparent hover:border-slate-300 dark:hover:border-slate-700"
+          className="tactile-rubber neu-btn p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
         >
-          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          {isFullscreen ? <Minimize2 className="w-4 h-4 text-sky-400" /> : <Maximize2 className="w-4 h-4" />}
         </button>
 
         {/* Collapse Header */}
@@ -181,7 +189,7 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           onClick={onToggleCollapse}
           title="Collapse Header to Maximise Viewport"
-          className="tactile-rubber p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800/70 border border-transparent hover:border-slate-300 dark:hover:border-slate-700"
+          className="tactile-rubber neu-btn p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
         >
           <ChevronUp className="w-4 h-4" />
         </button>

@@ -17,23 +17,129 @@
   }
 }
 
-/* 50% Neumorphic Origin UI Rubber Physics */
+/* =========================================================================
+   100% NEUMORPHIC ORIGIN UI SYSTEM (Rubber Physics + Dual-Shadow Extrusions)
+   ========================================================================= */
+
+/* Tactile 100% Neumorphic Rubber Physics */
 .tactile-rubber {
-  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1),
-              box-shadow 0.16s ease,
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
               background-color 0.16s ease,
               border-color 0.16s ease,
               color 0.16s ease;
 }
 
-.tactile-rubber:hover:not(:disabled) {
-  transform: translateY(-1.5px);
-  box-shadow: 0 4px 14px -2px rgba(2, 132, 199, 0.25), 0 2px 6px -1px rgba(0, 0, 0, 0.08);
+/* Light mode 100% Neumorphic Convex Surface */
+.neu-convex {
+  background: #F8FAFC;
+  box-shadow: 6px 6px 14px rgba(163, 177, 198, 0.45),
+              -6px -6px 14px rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.7);
 }
 
+.dark .neu-convex {
+  background: #0D131F;
+  box-shadow: 6px 6px 16px rgba(0, 0, 0, 0.75),
+              -4px -4px 12px rgba(255, 255, 255, 0.04),
+              inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Sunken / Inset / Debossed well for viewports, inputs, and track containers */
+.neu-pressed, .neu-inset {
+  background: #F1F5F9;
+  box-shadow: inset 4px 4px 9px rgba(163, 177, 198, 0.4),
+              inset -4px -4px 9px rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(163, 177, 198, 0.25);
+}
+
+.dark .neu-pressed, .dark .neu-inset {
+  background: #060911;
+  box-shadow: inset 4px 4px 10px rgba(0, 0, 0, 0.9),
+              inset -2px -2px 8px rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* 100% Neumorphic Interactive Buttons */
+.neu-btn {
+  background: #F8FAFC;
+  box-shadow: 4px 4px 10px rgba(163, 177, 198, 0.4),
+              -4px -4px 10px rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.dark .neu-btn {
+  background: #0E1524;
+  box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.75),
+              -3px -3px 8px rgba(255, 255, 255, 0.04),
+              inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.neu-btn:hover:not(:disabled),
+.tactile-rubber:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 6px 6px 16px rgba(163, 177, 198, 0.5),
+              -6px -6px 16px rgba(255, 255, 255, 1);
+}
+
+.dark .neu-btn:hover:not(:disabled),
+.dark .tactile-rubber:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 6px 6px 18px rgba(0, 0, 0, 0.9),
+              -4px -4px 12px rgba(255, 255, 255, 0.07),
+              inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.neu-btn:active:not(:disabled),
 .tactile-rubber:active:not(:disabled) {
-  transform: scale(0.98) translateY(0.5px);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.16);
+  transform: scale(0.97) translateY(1px);
+  box-shadow: inset 3px 3px 6px rgba(163, 177, 198, 0.5),
+              inset -3px -3px 6px rgba(255, 255, 255, 0.95);
+}
+
+.dark .neu-btn:active:not(:disabled),
+.dark .tactile-rubber:active:not(:disabled) {
+  transform: scale(0.97) translateY(1px);
+  box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.85),
+              inset -1px -1px 4px rgba(255, 255, 255, 0.05);
+}
+
+/* Primary Clinical Blue Neumorphic Highlight */
+.neu-primary {
+  background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
+  color: #FFFFFF;
+  box-shadow: 4px 4px 14px rgba(2, 132, 199, 0.42),
+              -2px -2px 8px rgba(56, 189, 248, 0.25),
+              inset 0 1px 1px rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.neu-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 5px 5px 18px rgba(2, 132, 199, 0.55),
+              -3px -3px 10px rgba(56, 189, 248, 0.35),
+              inset 0 1px 1px rgba(255, 255, 255, 0.45);
+}
+
+.neu-primary:active:not(:disabled) {
+  transform: scale(0.97) translateY(1px);
+  box-shadow: inset 3px 3px 6px rgba(1, 48, 74, 0.7),
+              inset -1px -1px 4px rgba(56, 189, 248, 0.35);
+}
+
+/* Neumorphic Rounded Pill */
+.neu-pill {
+  box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.15),
+              -2px -2px 6px rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.dark .neu-pill {
+  box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.75),
+              -2px -2px 6px rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* Subtle scrollbars */

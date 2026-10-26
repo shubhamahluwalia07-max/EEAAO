@@ -254,21 +254,21 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onContextMenu={(e) => e.preventDefault()}
-      className="relative w-full h-full bg-[#000000] overflow-hidden select-none border border-slate-800 flex items-center justify-center font-sans"
+      className="relative w-full h-full bg-[#000000] overflow-hidden select-none border border-sky-500/60 shadow-[0_0_12px_rgba(2,132,199,0.2)] flex items-center justify-center font-sans neu-pressed"
     >
       {/* Three.js Canvas */}
       <canvas ref={canvasRef} className="w-full h-full block cursor-grab active:cursor-grabbing" />
 
-      {/* Top Left Title Badge */}
-      <div className="absolute top-2 left-2 z-20 flex items-center gap-2 pointer-events-none">
-        <span className="font-bold text-xs tracking-wide uppercase text-slate-300 bg-black/60 px-2 py-0.5 rounded border border-white/10">
+      {/* Top Left Title Badge with Sapphire Blue Accent */}
+      <div className="absolute top-2.5 left-2.5 z-20 flex items-center gap-2 pointer-events-none">
+        <span className="font-extrabold text-[11px] tracking-wider uppercase bg-sky-950/70 border border-sky-500/40 text-sky-300 px-2.5 py-0.5 rounded-lg shadow-md backdrop-blur-md">
           3D Objects View
         </span>
       </div>
 
-      {/* Rotating Blue Circular Spinner when Calculating (ZERO text beside it) */}
+      {/* Rotating Blue Circular Spinner when Calculating */}
       {isCalculating && (
-        <div className="absolute top-3 left-32 z-30 pointer-events-none flex items-center justify-center">
+        <div className="absolute top-3 left-36 z-30 pointer-events-none flex items-center justify-center">
           <span className="w-5 h-5 rounded-full border-2 border-[#0284C7] border-t-transparent animate-spin" />
         </div>
       )}
@@ -277,7 +277,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       <button
         type="button"
         onClick={onToggleMaximize}
-        className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white/80 hover:text-white border border-white/10 tactile-rubber cursor-pointer"
+        className="absolute top-2.5 right-2.5 z-20 p-1.5 rounded-xl bg-black/60 hover:bg-black/90 text-white/80 hover:text-white border border-white/15 tactile-rubber cursor-pointer backdrop-blur-sm shadow-md"
         title={isMaximized ? 'Restore Quadrant' : 'Maximize Quadrant'}
       >
         {isMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -289,31 +289,34 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           <button
             type="button"
             onClick={onBuild3DClick}
-            className="pointer-events-auto tactile-rubber px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#0284C7] hover:bg-sky-700 shadow-xl shadow-sky-600/30 border border-sky-500 cursor-pointer"
+            className="pointer-events-auto tactile-rubber neu-primary px-6 py-3 rounded-2xl text-xs font-bold shadow-2xl shadow-sky-600/40 border border-sky-400/50 cursor-pointer"
           >
             Calculate 3D Object
           </button>
         </div>
       )}
 
-      {/* Rotating 3D Orientation Triad at Bottom-Center */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
-        <svg width="88" height="88" className="overflow-visible">
-          {/* X Axis: Red */}
-          <line x1="44" y1="44" x2={ptX.x} y2={ptX.y} stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" />
-          <text x={ptX.x} y={ptX.y - 3} fill="#EF4444" fontSize="10" fontWeight="bold" textAnchor="middle">
+      {/* Rotating 3D Orientation Triad in Bottom-Left Corner */}
+      <div className="absolute bottom-3 left-3 z-20 pointer-events-none p-1.5 rounded-xl bg-black/60 backdrop-blur-sm border border-white/10 neu-pressed">
+        <svg width="68" height="68" className="overflow-visible">
+          {/* Triad center origin dot */}
+          <circle cx="34" cy="34" r="3" fill="#64748B" />
+
+          {/* X Axis: Red (Right / Left anatomical) */}
+          <line x1="34" y1="34" x2={34 + (ptX.x - 44) * 0.78} y2={34 + (ptX.y - 44) * 0.78} stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" />
+          <text x={34 + (ptX.x - 44) * 0.88} y={34 + (ptX.y - 44) * 0.88 + 3} fill="#EF4444" fontSize="10" fontWeight="bold" textAnchor="middle">
             X
           </text>
 
-          {/* Y Axis: Yellow */}
-          <line x1="44" y1="44" x2={ptY.x} y2={ptY.y} stroke="#EAB308" strokeWidth="2.5" strokeLinecap="round" />
-          <text x={ptY.x} y={ptY.y - 3} fill="#EAB308" fontSize="10" fontWeight="bold" textAnchor="middle">
+          {/* Y Axis: Green (Anterior / Posterior anatomical - standard RGB/XYZ) */}
+          <line x1="34" y1="34" x2={34 + (ptY.x - 44) * 0.78} y2={34 + (ptY.y - 44) * 0.78} stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" />
+          <text x={34 + (ptY.x - 44) * 0.88} y={34 + (ptY.y - 44) * 0.88 + 3} fill="#10B981" fontSize="10" fontWeight="bold" textAnchor="middle">
             Y
           </text>
 
-          {/* Z Axis: Blue */}
-          <line x1="44" y1="44" x2={ptZ.x} y2={ptZ.y} stroke="#0EA5E9" strokeWidth="2.5" strokeLinecap="round" />
-          <text x={ptZ.x} y={ptZ.y - 3} fill="#0EA5E9" fontSize="10" fontWeight="bold" textAnchor="middle">
+          {/* Z Axis: Blue (Superior / Inferior anatomical) */}
+          <line x1="34" y1="34" x2={34 + (ptZ.x - 44) * 0.78} y2={34 + (ptZ.y - 44) * 0.78} stroke="#0284C7" strokeWidth="2.5" strokeLinecap="round" />
+          <text x={34 + (ptZ.x - 44) * 0.88} y={34 + (ptZ.y - 44) * 0.88 + 3} fill="#38BDF8" fontSize="10" fontWeight="bold" textAnchor="middle">
             Z
           </text>
         </svg>

@@ -1,5 +1,5 @@
 import time
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 import numpy as np
 import scipy.ndimage as ndi
 import SimpleITK as sitk

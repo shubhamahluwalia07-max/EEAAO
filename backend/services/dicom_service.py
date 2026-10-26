@@ -1,11 +1,10 @@
 import os
-import io
 import json
 import struct
 import zipfile
 import tempfile
 import time
-from typing import Dict, List, Any, Optional, Tuple, Generator
+from typing import Dict, List, Any, Optional, Tuple
 import numpy as np
 import pydicom
 from pydicom.dataset import Dataset

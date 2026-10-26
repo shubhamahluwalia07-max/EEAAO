@@ -1,8 +1,10 @@
 import os
 import json
 import asyncio
+import shutil
+import tempfile
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -92,6 +94,41 @@ def ingest_dicom(req: IngestRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/api/dicom/upload")
+async def upload_dicom(files: List[UploadFile] = File(...)):
+    """
+    Ingests dragged & dropped or browsed DICOM folder files or .ZIP archive.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided.")
+
+    td = tempfile.TemporaryDirectory(prefix="medam_upload_")
+    dicom_service.temp_dirs.append(td)
+    upload_dir = td.name
+
+    try:
+        # Check if single zip file
+        if len(files) == 1 and files[0].filename and files[0].filename.lower().endswith(".zip"):
+            zip_dest = os.path.join(upload_dir, files[0].filename)
+            with open(zip_dest, "wb") as f_out:
+                shutil.copyfileobj(files[0].file, f_out)
+            res = dicom_service.ingest_path(zip_dest)
+            return res
+        else:
+            # Multiple files from folder or individual slices
+            for idx, f in enumerate(files):
+                # Preserve directory structure or ensure uniqueness
+                fname = f.filename or f"slice_{idx}.dcm"
+                rel_path = fname.replace("\\", "/").lstrip("/")
+                dest_path = os.path.join(upload_dir, rel_path)
+                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                with open(dest_path, "wb") as f_out:
+                    shutil.copyfileobj(f.file, f_out)
+            res = dicom_service.ingest_path(upload_dir)
+            return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.get("/api/dicom/ingest/stream")
 async def ingest_dicom_stream(path: str = "C:\\Users\\ShubhamAhluwalia\\Downloads\\Compressed\\KAMLESH 202603583814.zip"):
     """
@@ -104,7 +141,10 @@ async def ingest_dicom_stream(path: str = "C:\\Users\\ShubhamAhluwalia\\Download
             queue.put_nowait(event_data)
 
         # Run ingestion in worker thread
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
         future = loop.run_in_executor(None, dicom_service.ingest_path, path, callback)
 
         while not future.done() or not queue.empty():
@@ -212,16 +252,18 @@ def edit_mask(req: EditMaskRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/segment/seed-segment/preview")
-def seed_segment_preview(series_id: str = Query(...), config: SeedSegmentConfig = None):
+def seed_segment_preview(series_id: str = Query(...), config: Optional[SeedSegmentConfig] = None):
     try:
-        return segmentation_service.seed_segment(series_id, config.dict(), is_preview=True)
+        cfg_dict = (config.model_dump() if hasattr(config, "model_dump") else config.dict()) if config else {}
+        return segmentation_service.seed_segment(series_id, cfg_dict, is_preview=True)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/segment/seed-segment/calculate")
-def seed_segment_calculate(series_id: str = Query(...), config: SeedSegmentConfig = None):
+def seed_segment_calculate(series_id: str = Query(...), config: Optional[SeedSegmentConfig] = None):
     try:
-        return segmentation_service.seed_segment(series_id, config.dict(), is_preview=False)
+        cfg_dict = (config.model_dump() if hasattr(config, "model_dump") else config.dict()) if config else {}
+        return segmentation_service.seed_segment(series_id, cfg_dict, is_preview=False)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -14,9 +14,9 @@ const HIST_MAX = 3071;
 const HIST_RANGE = HIST_MAX - HIST_MIN;
 
 const PRESETS = [
-  { label: 'Bone', min: 226, max: 3071 },
-  { label: 'Spongiosa', min: 150, max: 700 },
-  { label: 'Soft Tissue', min: -100, max: 200 },
+  { label: 'Bone', min: 226, max: 3071, color: '#F59E0B', badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
+  { label: 'Spongiosa', min: 150, max: 700, color: '#F43F5E', badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
+  { label: 'Soft Tissue', min: -100, max: 200, color: '#10B981', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
 ];
 
 export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
@@ -152,10 +152,10 @@ export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
                 key={p.label}
                 type="button"
                 onClick={() => onChangeHuRange(p.min, p.max)}
-                className={`tactile-rubber px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all ${
+                className={`tactile-rubber px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${
                   isSelected
-                    ? 'bg-[#0284C7] text-white shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    ? `${p.badge} shadow-md shadow-black/40 scale-105`
+                    : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 {p.label}
@@ -187,29 +187,39 @@ export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
             left: `${minPct}%`,
             width: `${Math.max(0, maxPct - minPct)}%`,
           }}
-          className="absolute inset-y-0 bg-gradient-to-r from-sky-500/25 via-sky-400/35 to-sky-500/25 border-y border-sky-400/40 pointer-events-none"
+          className="absolute inset-y-0 bg-gradient-to-r from-sky-500/20 via-sky-400/30 to-sky-500/20 border-y border-sky-400/40 pointer-events-none neu-pressed"
         />
 
-        {/* Draggable Min Line & Pill */}
+        {/* Draggable Min Line & Pill (anti-clipping) */}
         <div
           style={{ left: `${minPct}%` }}
           onPointerDown={handlePointerDown('min')}
-          className="absolute inset-y-0 -translate-x-1/2 w-4 flex flex-col items-center justify-between cursor-ew-resize z-20 group"
+          className="absolute inset-y-0 -translate-x-1/2 w-5 flex flex-col items-center justify-between cursor-ew-resize z-20 group select-none"
         >
-          <div className="w-[2px] h-full bg-[#38BDF8] shadow-sm shadow-sky-400" />
-          <div className="absolute top-1 bg-[#0284C7] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-md pointer-events-none whitespace-nowrap">
+          <div className="w-[2px] h-full bg-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.7)]" />
+          <div
+            style={{
+              transform: minPct < 15 ? 'translateX(18px)' : (minPct > 85 ? 'translateX(-18px)' : 'translateX(0)'),
+            }}
+            className="absolute top-1 bg-gradient-to-r from-[#0284C7] to-sky-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-lg pointer-events-none whitespace-nowrap border border-sky-300/40"
+          >
             {minHu}
           </div>
         </div>
 
-        {/* Draggable Max Line & Pill */}
+        {/* Draggable Max Line & Pill (anti-clipping with edge offset) */}
         <div
           style={{ left: `${maxPct}%` }}
           onPointerDown={handlePointerDown('max')}
-          className="absolute inset-y-0 -translate-x-1/2 w-4 flex flex-col items-center justify-between cursor-ew-resize z-20 group"
+          className="absolute inset-y-0 -translate-x-1/2 w-5 flex flex-col items-center justify-between cursor-ew-resize z-20 group select-none"
         >
-          <div className="w-[2px] h-full bg-[#38BDF8] shadow-sm shadow-sky-400" />
-          <div className="absolute top-1 bg-[#0284C7] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-md pointer-events-none whitespace-nowrap">
+          <div className="w-[2px] h-full bg-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.7)]" />
+          <div
+            style={{
+              transform: maxPct > 80 ? 'translateX(-22px)' : (maxPct < 20 ? 'translateX(20px)' : 'translateX(0)'),
+            }}
+            className="absolute top-1 bg-gradient-to-r from-[#0284C7] to-sky-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-lg pointer-events-none whitespace-nowrap border border-sky-300/40"
+          >
             {maxHu}
           </div>
         </div>

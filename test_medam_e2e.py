@@ -1,8 +1,6 @@
 import os
 import sys
 import time
-import io
-import trimesh
 import numpy as np
 
 # Ensure backend directory is in python path

@@ -49,9 +49,9 @@ export const SeedSegmentPanel: React.FC<SeedSegmentPanelProps> = ({
     : [];
 
   return (
-    <div className="w-full flex flex-col gap-2.5 p-3 bg-white dark:bg-[#111827] rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm text-xs select-none">
+    <div className="w-full flex flex-col gap-3 p-3.5 bg-[#F8FAFC] dark:bg-[#0D131F] rounded-2xl neu-convex border border-white/60 dark:border-white/5 text-xs select-none">
       {/* 3-Step Tab Switcher */}
-      <div className="flex items-center bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800">
+      <div className="flex items-center neu-pressed p-1 rounded-xl">
         {(['1. Selection', '2. Threshold', '3. Finishing'] as const).map((tab) => {
           const isActive = activeTab === tab;
           return (
@@ -59,9 +59,9 @@ export const SeedSegmentPanel: React.FC<SeedSegmentPanelProps> = ({
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
-              className={`tactile-rubber flex-1 py-1.5 rounded-md font-semibold text-[11px] transition-all ${
+              className={`tactile-rubber flex-1 py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-white dark:bg-[#1E293B] text-[#0284C7] dark:text-[#38BDF8] shadow-sm'
+                  ? 'neu-primary text-white shadow-md'
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >

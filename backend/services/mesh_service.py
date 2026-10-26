@@ -1,5 +1,4 @@
 import os
-import io
 import json
 import struct
 import time
@@ -7,7 +6,6 @@ from typing import Dict, List, Any, Optional
 import numpy as np
 import vtk
 from vtk.util import numpy_support
-import trimesh
 
 from .dicom_service import dicom_service
 from .segmentation_service import segmentation_service
@@ -25,7 +23,7 @@ class MeshObject:
         self.vertices: np.ndarray = np.empty((0, 3), dtype=np.float32)
         self.normals: np.ndarray = np.empty((0, 3), dtype=np.float32)
         self.indices: np.ndarray = np.empty(0, dtype=np.uint32)
-        self.polydata: Optional[vtk.vtkPolyData] = None
+        self.polydata: Any = None
         self.is_watertight: bool = True
         self.created_at: float = time.time()
 

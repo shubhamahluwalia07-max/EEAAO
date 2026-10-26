@@ -227,7 +227,7 @@ export const DesignStudioView: React.FC<DesignStudioViewProps> = ({
           <button
             type="button"
             onClick={() => onNavigateModule?.('Rados')}
-            className="tactile-rubber px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white backdrop-blur-md border border-white/10 flex items-center gap-1.5 cursor-pointer shadow-lg"
+            className="tactile-rubber neu-btn px-3 py-1.5 rounded-xl text-xs font-bold text-white backdrop-blur-md flex items-center gap-1.5 cursor-pointer shadow-lg"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Back to Rados</span>
@@ -236,7 +236,7 @@ export const DesignStudioView: React.FC<DesignStudioViewProps> = ({
           <button
             type="button"
             onClick={handleResetCamera}
-            className="tactile-rubber p-2 rounded-xl text-white/80 hover:text-white bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 cursor-pointer shadow-lg"
+            className="tactile-rubber neu-btn p-2 rounded-xl text-white/80 hover:text-white backdrop-blur-md cursor-pointer shadow-lg"
             title="Reset CAD View"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -248,10 +248,10 @@ export const DesignStudioView: React.FC<DesignStudioViewProps> = ({
             <a
               href={`/api/objects/${activeMesh.object_id}/export-stl`}
               download
-              className="tactile-rubber px-4 py-1.5 rounded-xl text-xs font-semibold text-white bg-[#0284C7] hover:bg-sky-600 border border-sky-500 shadow-xl flex items-center gap-2"
+              className="tactile-rubber neu-primary px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xl flex items-center gap-2"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Export STL</span>
+              <span>Export {activeMesh.name} STL</span>
             </a>
           </div>
         )}
