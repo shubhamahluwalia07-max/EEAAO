@@ -1,10 +1,10 @@
-# EEAAO Architectural Guardrails & Coding Standards
+# MEDAM Studio Antigravity Rules
 
-Strict Permanent Law for this codebase:
-1. All toolbar buttons across the application must use crisp, relevant vector SVG icons (using lucide-react or clean 20x20 inline stroke SVGs) with no text labels inside the buttons, and display the tool name and keyboard shortcut inside a clean floating tooltip when hovered.
-2. Never add placeholder text, mock reference studies, dummy buttons, explanatory sub-labels, tech-stack badges, or emojis anywhere in the codebase. Maintain the strict ban on placeholder text, mock data, and third-party software names anywhere in the codebase.
-3. Use natural sentence case or title case instead of all-caps blocky typography.
-4. Maintain the Origin UI design system with 50% Neumorphic rubber physics, soft dark slate typography (#0F172A) on matte alabaster surfaces (#F8FAFC), with solid clinical blue (#0284C7) and pure white icons/text (#FFFFFF) for active selections.
-5. All diagnostic MPR and 3D renderings must be 100% anatomically accurate with proper physical millimeter dimensions, anisotropic aspect ratio preservation, and a mandatory 14% viewport buffer framing.
-6. NEVER include, mention, or reference any proprietary or third-party competitor software names anywhere in UI labels, HTML titles, component names, variable names, file names, or code comments. All features must use original EEAAO terminology.
-7. GLOBAL TESTING PROTOCOL: During all automated testing, verification, and diagnostic phases for Rados and downstream modules, always use the DICOM ZIP archive located at `C:\Users\ShubhamAhluwalia\Downloads\Compressed\KAMLESH 202603583814.zip` as the standard test dataset.
+- BRANDING: Platform is strictly named MEDAM (badge MD).
+- ZERO PLACEHOLDERS: No placeholder text, mock studies, dummy buttons, explanatory sub-labels, or tech badges in the UI.
+- ZERO PROPRIETARY NAMES: Never mention or reference any third-party proprietary software names in UI labels, HTML titles, component names, variables, files, or comments.
+- LOCAL VENV ISOLATION: Python backend dependencies are strictly restricted to D:\My codes\EEAAO\backend\.venv.
+- BENCHMARK DATASET: Standard test dataset is C:\Users\ShubhamAhluwalia\Downloads\Compressed\KAMLESH 202603583814.zip.
+- DESIGN SYSTEM: Origin UI with 50% Neumorphic rubber physics, soft dark slate typography (#0F172A) on matte alabaster surfaces (#F8FAFC) / dark mode obsidian (#090D16), active blue #0284C7 with pure white #FFFFFF text/icons.
+- TOOLBAR: All toolbar buttons use vector SVG icons with zero text labels inside buttons, and clean floating tooltip on hover.
+- DIAGNOSTIC ACCURACY: Axial, Coronal, Sagittal and 3D View must use exact physical millimeter spacing and viewport buffer.
