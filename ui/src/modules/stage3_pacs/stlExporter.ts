@@ -1031,6 +1031,7 @@ export function calculate3DObjectFromMask(options: Calculate3DOptions): Calculat
     uniqueNormals: mesh.uniqueNormals,
     vertices: mesh.vertices,
     normals: mesh.normals,
+    boundsMm: mesh.boundsMm,
   };
 }
 

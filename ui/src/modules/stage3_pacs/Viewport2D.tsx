@@ -51,6 +51,7 @@ interface Viewport2DProps {
   boneSeeds?: BoneSeedPoint[];
   onBoneSeedClick?: (coords: [number, number, number], hu: number) => void;
   isBoneWizardActive?: boolean;
+  isSeedPlacementActive?: boolean;
   onSplitMaskSeedClick?: (coords: [number, number, number], hu: number) => void;
 }
 
@@ -90,11 +91,13 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
   boneSeeds = [],
   onBoneSeedClick,
   isBoneWizardActive = false,
+  isSeedPlacementActive = false,
   onSplitMaskSeedClick,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollbarTrackRef = useRef<HTMLDivElement>(null);
+  const mouseDownPosRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
   // Container viewport dimensions
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({
@@ -380,6 +383,7 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
     const isMiddleClick = e.button === 1;
     const isShiftLeft = e.button === 0 && e.shiftKey;
     setDragStart({ x: e.clientX, y: e.clientY });
+    mouseDownPosRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
     setIsDragging(true);
 
     if (isMiddleClick || isShiftLeft) {
@@ -399,11 +403,8 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
     // ==========================================
     if (isSegmentMode) {
       if (activeSegmentTool === 'seed_segment' || activeSegmentTool === 'bone_auto_segment' || isBoneWizardActive) {
-        const voxel = screenToVolumeVoxel(e.clientX, e.clientY);
-        if (voxel && volume) {
-          const hu = volume.getVoxel(voxel[0], voxel[1], voxel[2]);
-          onBoneSeedClick?.(voxel, hu);
-        }
+        // Do NOT plant seeds on mouse down! Wait for deliberate stationary mouse up click
+        setDragMode('pan');
         return;
       }
 
@@ -608,6 +609,38 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
   // Mouse Up Router
   const handleMouseUp = (e: React.MouseEvent) => {
     setIsDragging(false);
+
+    const startPos = mouseDownPosRef.current;
+    const isCleanClick = startPos && Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y) < 5;
+
+    // Handle Seed Placement on deliberate stationary left click
+    if (
+      isCleanClick &&
+      e.button === 0 &&
+      !e.shiftKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      isSegmentMode &&
+      (activeSegmentTool === 'seed_segment' || activeSegmentTool === 'bone_auto_segment' || isBoneWizardActive) &&
+      isSeedPlacementActive &&
+      volume
+    ) {
+      const voxel = screenToVolumeVoxel(e.clientX, e.clientY);
+      if (
+        voxel &&
+        voxel[0] >= 0 && voxel[0] < volume.width &&
+        voxel[1] >= 0 && voxel[1] < volume.height &&
+        voxel[2] >= 0 && voxel[2] < volume.depth
+      ) {
+        const hu = volume.getVoxel(voxel[0], voxel[1], voxel[2]);
+        // Guard against clicking on air outside anatomical volume (< -600 HU)
+        if (hu > -600) {
+          onBoneSeedClick?.(voxel, hu);
+        }
+      }
+      setDragMode(null);
+      return;
+    }
 
     if (dragMode === 'brush_drag') {
       lastBrushVoxelRef.current = null;
@@ -1152,7 +1185,7 @@ export const Viewport2D: React.FC<Viewport2DProps> = ({
           )}
 
           {/* Live Bone Auto-Segment Seeds Overlay */}
-          {boneSeeds.map((seed, i) => {
+          {((isBoneWizardActive || isSeedPlacementActive) && boneSeeds.length > 0) && boneSeeds.map((seed, i) => {
             // Check if seed lies on or near current slice
             let onSlice = false;
             let pt: MeasurementPoint = { x: 0, y: 0 };

@@ -192,6 +192,11 @@ export interface Calculated3DObject {
   uniqueNormals: Float32Array;
   vertices: Float32Array;
   normals: Float32Array;
+  boundsMm?: {
+    min: [number, number, number];
+    max: [number, number, number];
+    size: [number, number, number];
+  };
 }
 
 export type SeedKind = 'need' | 'not_need';

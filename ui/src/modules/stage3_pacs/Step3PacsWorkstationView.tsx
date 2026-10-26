@@ -23,6 +23,7 @@ import { Viewport2D } from './Viewport2D';
 import { Viewport3D } from './Viewport3D';
 import { SeriesSelectorModal } from './SeriesSelectorModal';
 import { LeftIconRail } from './LeftIconRail';
+import { SeedSegmentModal } from './SeedSegmentModal';
 import {
   floodFill3D,
   applyBrushLine,
@@ -51,6 +52,7 @@ import {
   applyShrinkWrap,
   calculate3DObjectFromMask,
 } from './stlExporter';
+import { runFrontendBenchmarkDiagnostic } from './benchmarkDiagnostic';
 import { medamStateBus, ModuleId, TransferredMeshBuffer } from '../../shell/stateBus';
 
 interface Step3PacsWorkstationViewProps {
@@ -154,21 +156,8 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
   // Segmentation Workspace Mode State
   const [isSegmentMode, setIsSegmentMode] = useState<boolean>(false);
   const [activeSegmentTool, setActiveSegmentTool] = useState<SegmentToolMode>('threshold');
-  const [masks, setMasks] = useState<SegmentationMask[]>([
-    {
-      id: 'mask_1',
-      name: 'Cortical Bone',
-      color: '#06B6D4',
-      rgb: [6, 182, 212],
-      opacity: 0.6,
-      visible: true,
-      minHu: 226,
-      maxHu: 3071,
-      activePreset: 'cortical_bone',
-      selected: false,
-    },
-  ]);
-  const [activeMaskId, setActiveMaskId] = useState<string>('mask_1');
+  const [masks, setMasks] = useState<SegmentationMask[]>([]);
+  const [activeMaskId, setActiveMaskId] = useState<string>('');
 
   // Region Grow Accumulative State
   const [regionGrowSeeds, setRegionGrowSeeds] = useState<RegionGrowSeedRecord[]>([]);
@@ -198,7 +187,8 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
   const [objects, setObjects] = useState<Calculated3DObject[]>([]);
   const [activeObjectId, setActiveObjectId] = useState<string>('');
 
-  // Docked Seed Segmentation Workflow State
+  // Floating Seed Segmentation Workflow State
+  const [isSeedModalOpen, setIsSeedModalOpen] = useState<boolean>(false);
   const [seedMode, setSeedMode] = useState<SeedKind>('need');
   const [seedPoints, setSeedPoints] = useState<SeedPointEntry[]>([]);
   const [seedThresholdHu, setSeedThresholdHu] = useState<number>(150);
@@ -206,6 +196,9 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
   const [seedSegmentStep, setSeedSegmentStep] = useState<1 | 2 | 3>(1);
   const [seedGapClosingMm, setSeedGapClosingMm] = useState<number>(1.0);
   const [seedFillCavities, setSeedFillCavities] = useState<boolean>(true);
+  const [seedPreviewOnSlices, setSeedPreviewOnSlices] = useState<boolean>(true);
+  const priorMaskBackupRef = useRef<{ id: string; voxelMask?: Uint8Array } | null>(null);
+  const cancelIncompleteOperationRef = useRef<() => void>(() => {});
 
   // Viewport Maximize / Restore (1: Coronal, 2: Axial, 3: Sagittal, 4: 3D)
   const [maximizedQuadrant, setMaximizedQuadrant] = useState<number | null>(null);
@@ -213,8 +206,8 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
   // Mobile segmented view state (0: Coronal, 1: Axial, 2: Sagittal, 3: 3D)
   const [mobileActiveTab, setMobileActiveTab] = useState<number>(0);
 
-  // Active Mask Object
-  const activeMask = masks.find((m) => m.id === activeMaskId) || masks[0];
+  // Active Mask Object (safe when masks is empty)
+  const activeMask = masks.find((m) => m.id === activeMaskId) || masks[0] || null;
 
   // Reset transforms
   const handleResetView = () => {
@@ -229,6 +222,14 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
       setWindowWidth(volume.windowWidth);
     }
   };
+
+  // Expose global automated benchmark diagnostic hook for automated testing protocols
+  useEffect(() => {
+    (window as any).__runBenchmarkDiagnostic = runFrontendBenchmarkDiagnostic;
+    return () => {
+      delete (window as any).__runBenchmarkDiagnostic;
+    };
+  }, []);
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -292,6 +293,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
         e.preventDefault();
         setMaximizedQuadrant(null);
         if (isSeriesModalOpen) setIsSeriesModalOpen(false);
+        cancelIncompleteOperationRef.current();
       }
 
       // R: Reset view
@@ -309,6 +311,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
       // C: Crosshair tool
       else if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setActiveTool('crosshair');
         setShowCrosshairs(true);
       }
@@ -316,42 +319,49 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
       // W: Window / Level
       else if (e.key === 'w' || e.key === 'W') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setActiveTool('window');
       }
 
       // P: Pan
       else if (e.key === 'p' || e.key === 'P') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setActiveTool('pan');
       }
 
       // Z: Zoom
       else if (e.key === 'z' || e.key === 'Z') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setActiveTool('zoom');
       }
 
       // D or L: Distance / Length measurement
       else if (e.key === 'd' || e.key === 'D' || e.key === 'l' || e.key === 'L') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setActiveTool('length');
       }
 
       // A: Angle measurement
       else if (e.key === 'a' || e.key === 'A') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setActiveTool('angle');
       }
 
       // K: Cobb Angle measurement
       else if (e.key === 'k' || e.key === 'K') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setActiveTool('cobb');
       }
 
       // O: Elliptical ROI measurement
       else if (e.key === 'o' || e.key === 'O') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setActiveTool('roi');
       }
 
@@ -364,12 +374,14 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
       // S: Activate / toggle Segment mode
       else if (e.key === 's' || e.key === 'S') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setIsSegmentMode((m) => !m);
       }
 
       // G: Region grow
       else if (e.key === 'g' || e.key === 'G') {
         e.preventDefault();
+        cancelIncompleteOperationRef.current();
         setIsSegmentMode(true);
         handleSelectSegmentTool('region_grow');
       }
@@ -465,27 +477,28 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
   // Mask Management
   const handleCreateMask = () => {
     const swatches = [
+      { color: '#06B6D4', rgb: [6, 182, 212] as [number, number, number] },
       { color: '#10B981', rgb: [16, 185, 129] as [number, number, number] },
       { color: '#8B5CF6', rgb: [139, 92, 246] as [number, number, number] },
       { color: '#F43F5E', rgb: [244, 63, 94] as [number, number, number] },
       { color: '#F59E0B', rgb: [245, 158, 11] as [number, number, number] },
-      { color: '#06B6D4', rgb: [6, 182, 212] as [number, number, number] },
       { color: '#3B82F6', rgb: [59, 130, 246] as [number, number, number] },
     ];
     const swatch = swatches[masks.length % swatches.length];
     const newMask: SegmentationMask = {
       id: 'mask_' + Date.now(),
-      name: `Mask ${masks.length + 1}`,
+      name: `Manual Mask ${masks.length + 1}`,
       color: swatch.color,
       rgb: swatch.rgb,
-      opacity: 0.6,
+      opacity: 0.65,
       visible: true,
-      minHu: 226,
+      minHu: 150,
       maxHu: 3071,
       selected: false,
     };
     setMasks((prev) => [...prev, newMask]);
     setActiveMaskId(newMask.id);
+    return newMask;
   };
 
   const handleDeleteMask = (id: string) => {
@@ -601,6 +614,15 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
   };
 
   const handleSelectSegmentTool = (tool: SegmentToolMode) => {
+    if (tool === 'seed_segment') {
+      handleOpenSeedSegment();
+      return;
+    }
+
+    if (isSeedModalOpen || seedPoints.length > 0) {
+      cancelIncompleteOperation();
+    }
+
     setActiveSegmentTool(tool);
 
     if (tool === 'region_grow') {
@@ -835,6 +857,74 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
   // =========================================================================
   // LIVE COMPETITIVE SEED SEGMENTATION ENGINE (Need Seed vs Not Need)
   // =========================================================================
+  // =========================================================================
+  // CANCEL & TOOL SWITCH COORDINATION (Cancel uncompleted operations)
+  // =========================================================================
+  const handleCancelSeedSegment = useCallback(() => {
+    // Discard in-progress seeds
+    setSeedPoints([]);
+    // Revert active manual mask's temporary preview if one was generated
+    if (priorMaskBackupRef.current) {
+      handleUpdateMask(priorMaskBackupRef.current.id, {
+        voxelMask: priorMaskBackupRef.current.voxelMask,
+        exclusionMask: undefined,
+      });
+      priorMaskBackupRef.current = null;
+    } else if (activeMaskId) {
+      handleUpdateMask(activeMaskId, {
+        exclusionMask: undefined,
+      });
+    }
+    setIsSeedModalOpen(false);
+    setActiveSegmentTool('threshold');
+  }, [activeMaskId]);
+
+  const cancelIncompleteOperation = useCallback(() => {
+    // 1. If seed segmentation was open or has uncommitted seeds, cancel it
+    if (isSeedModalOpen || seedPoints.length > 0) {
+      handleCancelSeedSegment();
+    }
+    // 2. Clear any pending in-progress bone seeds or region grow seeds
+    if (boneSeeds.length > 0) setBoneSeeds([]);
+    if (regionGrowSeeds.length > 0) setRegionGrowSeeds([]);
+    if (seedsBoneA.length > 0 || seedsBoneB.length > 0) {
+      setSeedsBoneA([]);
+      setSeedsBoneB([]);
+    }
+  }, [isSeedModalOpen, seedPoints.length, handleCancelSeedSegment, boneSeeds.length, regionGrowSeeds.length, seedsBoneA.length, seedsBoneB.length]);
+  cancelIncompleteOperationRef.current = cancelIncompleteOperation;
+
+  const handleOpenSeedSegment = useCallback(() => {
+    let targetMask = activeMask;
+    if (!targetMask && masks.length === 0) {
+      targetMask = handleCreateMask();
+    }
+    if (targetMask) {
+      priorMaskBackupRef.current = {
+        id: targetMask.id,
+        voxelMask: targetMask.voxelMask ? new Uint8Array(targetMask.voxelMask) : undefined,
+      };
+    }
+    setIsSeedModalOpen(true);
+    setIsSegmentMode(true);
+    setActiveSegmentTool('seed_segment');
+    setSeedSegmentStep(1);
+  }, [activeMask, masks.length, handleCreateMask]);
+
+  // Viewport tool selection that removes/cancels previous uncompleted operations
+  const handleSelectViewportTool = useCallback(
+    (tool: ToolMode) => {
+      if (tool !== activeTool) {
+        cancelIncompleteOperation();
+        setActiveTool(tool);
+      }
+    },
+    [activeTool, cancelIncompleteOperation]
+  );
+
+  // =========================================================================
+  // LIVE COMPETITIVE SEED SEGMENTATION ENGINE (Need Seed vs Not Need)
+  // =========================================================================
   const runLiveSeedSegmentation = useCallback(
     (
       points: SeedPointEntry[],
@@ -844,12 +934,12 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
     ) => {
       if (!volume) return;
       const mId = targetMaskId || activeMaskId;
-      const targetMask = masks.find((m) => m.id === mId) || masks[0];
+      const targetMask = masks.find((m) => m.id === mId) || masks[0] || null;
       if (!targetMask) return;
 
       if (points.length === 0) {
         handleUpdateMask(targetMask.id, {
-          voxelMask: undefined,
+          voxelMask: priorMaskBackupRef.current?.voxelMask,
           exclusionMask: undefined,
         });
         return;
@@ -865,6 +955,8 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
         seeds: points,
         seedThresholdHu: sThresh,
         sensitivity: sens,
+        gapClosingMm: seedGapClosingMm,
+        fillLongBones: seedFillCavities,
       });
 
       handleUpdateMask(targetMask.id, {
@@ -872,91 +964,114 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
         exclusionMask: exclusionMask,
       });
     },
-    [volume, activeMaskId, masks]
+    [volume, activeMaskId, masks, seedGapClosingMm, seedFillCavities]
   );
 
   // Planting a seed on Axial, Coronal, or Sagittal slice
   const handleBoneSeedClick = useCallback(
     (coords: [number, number, number], hu: number) => {
-      if (activeSegmentTool === 'seed_segment') {
-        const [dx, dy, dz] = volume?.spacing || [1, 1, 1];
-        const coordsMm: [number, number, number] = [
-          parseFloat((coords[0] * dx).toFixed(1)),
-          parseFloat((coords[1] * dy).toFixed(1)),
-          parseFloat((coords[2] * dz).toFixed(1)),
-        ];
+      if (!isSeedModalOpen || activeSegmentTool !== 'seed_segment') return;
+      if (!activeMask) return;
 
-        const count = seedPoints.filter((s) => s.kind === seedMode).length + 1;
-        const newSeed: SeedPointEntry = {
-          id: 'seed_' + Date.now(),
-          name: seedMode === 'need' ? `Need Seed ${count}` : `Not Need ${count}`,
-          kind: seedMode,
-          voxel: coords,
-          coordsMm,
-          hu,
-          slicePlane: 'axial',
-          sliceIndex: coords[2],
-        };
+      const [dx, dy, dz] = volume?.spacing || [1, 1, 1];
+      const coordsMm: [number, number, number] = [
+        parseFloat((coords[0] * dx).toFixed(1)),
+        parseFloat((coords[1] * dy).toFixed(1)),
+        parseFloat((coords[2] * dz).toFixed(1)),
+      ];
 
-        const nextSeeds = [...seedPoints, newSeed];
-        setSeedPoints(nextSeeds);
-
-        // Immediately compute and render colored bone mask contour and black barrier
-        runLiveSeedSegmentation(nextSeeds, seedThresholdHu, sensitivity);
-        return;
-      }
-
-      const newSeed: BoneSeedPoint = {
-        id: 'bseed_' + Date.now(),
+      const count = seedPoints.filter((s) => s.kind === seedMode).length + 1;
+      const newSeed: SeedPointEntry = {
+        id: 'seed_' + Date.now(),
+        name: seedMode === 'need' ? `Need Seed ${count}` : `Not Need ${count}`,
+        kind: seedMode,
         voxel: coords,
+        coordsMm,
         hu,
-        color: '#06B6D4',
+        slicePlane: 'axial',
+        sliceIndex: coords[2],
       };
-      setBoneSeeds((prev) => [...prev, newSeed]);
+
+      const nextSeeds = [...seedPoints, newSeed];
+      setSeedPoints(nextSeeds);
+
+      if (seedPreviewOnSlices) {
+        runLiveSeedSegmentation(nextSeeds, seedThresholdHu, sensitivity, activeMask.id);
+      }
     },
-    [activeSegmentTool, volume, seedPoints, seedMode, seedThresholdHu, sensitivity, runLiveSeedSegmentation]
+    [isSeedModalOpen, activeSegmentTool, activeMask, volume, seedPoints, seedMode, seedThresholdHu, sensitivity, seedPreviewOnSlices, runLiveSeedSegmentation]
   );
 
   const handleChangeSensitivity = (val: number) => {
     setSensitivity(val);
-    runLiveSeedSegmentation(seedPoints, seedThresholdHu, val);
+    if (activeMask && seedPreviewOnSlices) {
+      runLiveSeedSegmentation(seedPoints, seedThresholdHu, val, activeMask.id);
+    }
   };
 
   const handleChangeSeedThresholdHu = (val: number) => {
     setSeedThresholdHu(val);
-    runLiveSeedSegmentation(seedPoints, val, sensitivity);
+    if (activeMask && seedPreviewOnSlices) {
+      runLiveSeedSegmentation(seedPoints, val, sensitivity, activeMask.id);
+    }
   };
 
   const handleDeleteSeedPoint = (id: string) => {
     const nextSeeds = seedPoints.filter((s) => s.id !== id);
     setSeedPoints(nextSeeds);
-    runLiveSeedSegmentation(nextSeeds, seedThresholdHu, sensitivity);
+    if (activeMask && seedPreviewOnSlices) {
+      runLiveSeedSegmentation(nextSeeds, seedThresholdHu, sensitivity, activeMask.id);
+    }
   };
 
   const handleClearSeedPoints = () => {
     setSeedPoints([]);
-    runLiveSeedSegmentation([], seedThresholdHu, sensitivity);
+    if (activeMask) {
+      runLiveSeedSegmentation([], seedThresholdHu, sensitivity, activeMask.id);
+    }
   };
 
-  const handleApplySeedSegmentToMask = () => {
-    if (!activeMask?.voxelMask) return;
-    setIsSegmentMode(true);
-  };
+  const handleFinishSeedSegment = useCallback(() => {
+    if (!activeMask || !volume) return;
+    if (seedPoints.length > 0) {
+      const { inclusionMask } = executeCompetitiveSeedSegmentation({
+        voxels: volume.voxels,
+        width: volume.width,
+        height: volume.height,
+        depth: volume.depth,
+        spacing: volume.spacing,
+        seeds: seedPoints,
+        seedThresholdHu,
+        sensitivity,
+        gapClosingMm: seedGapClosingMm,
+        fillLongBones: seedFillCavities,
+      });
+      handleUpdateMask(activeMask.id, {
+        voxelMask: inclusionMask,
+        exclusionMask: undefined,
+      });
+    }
+    setSeedPoints([]);
+    priorMaskBackupRef.current = null;
+    setIsSeedModalOpen(false);
+    handleBuild3DSurface();
+  }, [activeMask, volume, seedPoints, seedThresholdHu, sensitivity, seedGapClosingMm, seedFillCavities, handleBuild3DSurface]);
+  const handleApplySeedSegmentToMask = handleFinishSeedSegment;
 
-  // Unified bone seeds passed to viewports
+  // Unified bone seeds passed to viewports ONLY when Seed Segment is actively open!
   const allBoneSeeds: BoneSeedPoint[] = useMemo(() => {
-    if (activeSegmentTool === 'seed_segment') {
+    if (isSeedModalOpen && activeSegmentTool === 'seed_segment') {
       return seedPoints.map((s) => ({
         id: s.id,
         voxel: s.voxel,
         hu: s.hu,
-        color: s.kind === 'need' ? '#22C55E' : '#EF4444',
+        color: s.kind === 'need' ? '#10B981' : '#EF4444',
         boneName: s.name,
         kind: s.kind,
       }));
     }
     return boneSeeds;
-  }, [activeSegmentTool, seedPoints, boneSeeds]);
+  }, [isSeedModalOpen, activeSegmentTool, seedPoints, boneSeeds]);
 
   // Combined masks rendered on slices
   const displayMasks: SegmentationMask[] = useMemo(() => {
@@ -1356,6 +1471,8 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
     await downloadBinaryStl(stlBuffer, filename);
   };
 
+  const isSeedPlacementActive = isSeedModalOpen && activeSegmentTool === 'seed_segment' && seedSegmentStep === 1 && !!activeMask;
+
   return (
     <div
       className={`flex-1 flex flex-col overflow-hidden select-none font-sans ${
@@ -1368,7 +1485,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
         isCollapsed={isCadToolbarCollapsed}
         onToggleCollapse={() => setIsCadToolbarCollapsed((v) => !v)}
         activeTool={activeTool}
-        onSelectTool={setActiveTool}
+        onSelectTool={handleSelectViewportTool}
         onChangeWindow={(c, w) => {
           setWindowCenter(c);
           setWindowWidth(w);
@@ -1382,10 +1499,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
         onToggleSegmentMode={() => setIsSegmentMode((m) => !m)}
         activeSegmentTool={activeSegmentTool}
         onSelectSegmentTool={handleSelectSegmentTool}
-        onOpenCtBoneModal={() => {
-          setIsSegmentMode(true);
-          setActiveSegmentTool('seed_segment');
-        }}
+        onOpenCtBoneModal={handleOpenSeedSegment}
         onBuild3DSurface={handleBuild3DSurface}
         onApplyTaubinSmooth={handleApplyTaubinSmooth}
         onApplyQemReduce={handleApplyQemReduce}
@@ -1406,7 +1520,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
         {/* Narrow 48px Icon Rail for Direct 2D/3D Viewport Tools */}
         <LeftIconRail
           activeTool={activeTool}
-          onSelectTool={setActiveTool}
+          onSelectTool={handleSelectViewportTool}
           slabMode={slabMode}
           onToggleSlab={() => setSlabMode((s) => (s === 'none' ? 'mip' : 'none'))}
           isCinePlaying={isCinePlaying}
@@ -1479,6 +1593,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
                     boneSeeds={allBoneSeeds}
                     onBoneSeedClick={handleBoneSeedClick}
                     isBoneWizardActive={activeSegmentTool === 'bone_auto_segment' || activeSegmentTool === 'seed_segment'}
+                    isSeedPlacementActive={isSeedPlacementActive}
                     onSplitMaskSeedClick={handleSplitMaskSeedClick}
                   />
                 </div>
@@ -1535,6 +1650,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
                     boneSeeds={allBoneSeeds}
                     onBoneSeedClick={handleBoneSeedClick}
                     isBoneWizardActive={activeSegmentTool === 'bone_auto_segment' || activeSegmentTool === 'seed_segment'}
+                    isSeedPlacementActive={isSeedPlacementActive}
                     onSplitMaskSeedClick={handleSplitMaskSeedClick}
                   />
                 </div>
@@ -1591,6 +1707,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
                     boneSeeds={allBoneSeeds}
                     onBoneSeedClick={handleBoneSeedClick}
                     isBoneWizardActive={activeSegmentTool === 'bone_auto_segment' || activeSegmentTool === 'seed_segment'}
+                    isSeedPlacementActive={isSeedPlacementActive}
                     onSplitMaskSeedClick={handleSplitMaskSeedClick}
                   />
                 </div>
@@ -1729,6 +1846,41 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
           }}
           onClose={() => setIsSeriesModalOpen(false)}
           currentSelectedSeriesUid={series.series_instance_uid}
+        />
+      )}
+
+      {/* Floating Draggable Seed Segmentation Modal Window */}
+      {isSeedModalOpen && (
+        <SeedSegmentModal
+          isOpen={isSeedModalOpen}
+          onClose={handleCancelSeedSegment}
+          onCancel={handleCancelSeedSegment}
+          volume={volume}
+          masks={masks}
+          activeMaskId={activeMaskId}
+          onSelectMaskId={setActiveMaskId}
+          onCreateManualMask={handleCreateMask}
+          seedMode={seedMode}
+          onChangeSeedMode={setSeedMode}
+          seedPoints={seedPoints}
+          onDeleteSeedPoint={handleDeleteSeedPoint}
+          onClearSeedPoints={handleClearSeedPoints}
+          sensitivity={sensitivity}
+          onChangeSensitivity={handleChangeSensitivity}
+          seedThresholdHu={seedThresholdHu}
+          onChangeSeedThresholdHu={handleChangeSeedThresholdHu}
+          currentTab={seedSegmentStep}
+          onChangeTab={setSeedSegmentStep}
+          gapClosingMm={seedGapClosingMm}
+          onChangeGapClosingMm={setSeedGapClosingMm}
+          fillCavities={seedFillCavities}
+          onToggleFillCavities={() => setSeedFillCavities((v) => !v)}
+          previewOnSlices={seedPreviewOnSlices}
+          onTogglePreviewOnSlices={() => setSeedPreviewOnSlices((v) => !v)}
+          onCalculate={() => runLiveSeedSegmentation(seedPoints, seedThresholdHu, sensitivity, activeMaskId)}
+          onFinish={handleFinishSeedSegment}
+          isCalculating={false}
+          onUpdateMaskHu={(maskId, minHu, maxHu) => handleUpdateMask(maskId, { minHu, maxHu })}
         />
       )}
     </div>

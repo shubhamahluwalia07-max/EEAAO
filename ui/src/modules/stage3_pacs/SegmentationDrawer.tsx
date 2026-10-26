@@ -330,8 +330,27 @@ export const SegmentationDrawer: React.FC<SegmentationDrawerProps> = ({
 
             {/* Scrollable Mask List */}
             <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1.5">
-              {masks.map((m) => {
-                const isActive = m.id === activeMaskId;
+              {masks.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400 gap-3 my-auto">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                    <IconPlus size={20} />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">No Masks Created</span>
+                    <span className="text-[11px] text-slate-400">Add a manual mask to begin segmentation or seed planting.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onCreateMask}
+                    className="tactile-rubber px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0284C7] hover:bg-sky-600 shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <IconPlus size={14} />
+                    <span>+ Add Manual Mask</span>
+                  </button>
+                </div>
+              ) : (
+                masks.map((m) => {
+                  const isActive = m.id === activeMaskId;
 
                 return (
                   <div
@@ -400,7 +419,8 @@ export const SegmentationDrawer: React.FC<SegmentationDrawerProps> = ({
                     </div>
                   </div>
                 );
-              })}
+              })
+            )}
             </div>
 
             {/* Mask Actions Footer */}
@@ -580,227 +600,23 @@ export const SegmentationDrawer: React.FC<SegmentationDrawerProps> = ({
         </div>
 
         {/* ------------------------------------------------------------------ */}
-        {/* TOOL 1: SEED SEGMENT (3 COMPACT TABS: 1. Selection, 2. Threshold, 3. Finishing) */}
+        {/* TOOL 1: SEED SEGMENT (FLOATING WINDOW WORKFLOW)                   */}
         {/* ------------------------------------------------------------------ */}
         {activeSegmentTool === 'seed_segment' && (
-          <div className="flex flex-col gap-2.5">
-            {/* 3 Compact Step Tabs */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg">
-              {[
-                { step: 1 as const, label: '1. Selection' },
-                { step: 2 as const, label: '2. Threshold' },
-                { step: 3 as const, label: '3. Finishing' },
-              ].map((tab) => {
-                const isActive = seedSegmentStep === tab.step;
-                return (
-                  <button
-                    key={tab.step}
-                    type="button"
-                    onClick={() => onChangeSeedSegmentStep?.(tab.step)}
-                    className={`flex-1 py-1 text-[11px] font-semibold rounded-md cursor-pointer transition-all ${
-                      isActive
-                        ? 'bg-white dark:bg-[#182234] text-[#0284C7] shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Step 1: Selection */}
-            {seedSegmentStep === 1 && (
-              <div className="flex flex-col gap-2.5">
-                {/* Seed Point Selection Table */}
-                <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden bg-white dark:bg-[#111827]">
-                  <table className="w-full text-left text-[11px]">
-                    <thead className="bg-slate-50 dark:bg-[#182234] text-slate-500 uppercase text-[9px] font-bold border-b border-slate-200 dark:border-slate-800">
-                      <tr>
-                        <th className="py-1 px-2">NAME</th>
-                        <th className="py-1 px-2">HU</th>
-                        <th className="py-1 px-2">COORDS</th>
-                        <th className="py-1 px-1 text-right"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                      {seedPoints.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="py-3 px-2 text-center text-slate-400 text-[10px]">
-                            Click on DICOM slice to plant seeds
-                          </td>
-                        </tr>
-                      ) : (
-                        seedPoints.map((s) => (
-                          <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                            <td className="py-1 px-2 font-semibold">
-                              <span
-                                style={{
-                                  color: s.kind === 'need' ? '#22C55E' : '#EF4444',
-                                }}
-                              >
-                                {s.name}
-                              </span>
-                            </td>
-                            <td className="py-1 px-2 text-slate-600 dark:text-slate-300">{s.hu}</td>
-                            <td className="py-1 px-2 text-[10px] text-slate-400 font-mono">
-                              {s.coordsMm[0].toFixed(0)}, {s.coordsMm[1].toFixed(0)}
-                            </td>
-                            <td className="py-1 px-1 text-right">
-                              <button
-                                type="button"
-                                onClick={() => onDeleteSeedPoint?.(s.id)}
-                                className="text-slate-400 hover:text-red-500 p-0.5 cursor-pointer"
-                              >
-                                <IconClose size={11} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Mode Toggle Buttons: Need Seed (Green #22C55E) vs Not Need (Red #EF4444) */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => onChangeSeedMode?.('need')}
-                    className={`tactile-rubber flex-1 py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all border ${
-                      seedMode === 'need'
-                        ? 'border-[#22C55E] bg-[#22C55E]/10 text-[#22C55E] shadow-xs'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-[#22C55E]" />
-                    <span style={{ color: '#22C55E' }}>Need Seed</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onChangeSeedMode?.('not_need')}
-                    className={`tactile-rubber flex-1 py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all border ${
-                      seedMode === 'not_need'
-                        ? 'border-[#EF4444] bg-[#EF4444]/10 text-[#EF4444] shadow-xs'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-[#EF4444]" />
-                    <span style={{ color: '#EF4444' }}>Not Need</span>
-                  </button>
-
-                  {seedPoints.length > 0 && (
-                    <button
-                      type="button"
-                      title="Clear All Seeds"
-                      onClick={onClearSeedPoints}
-                      className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 cursor-pointer"
-                    >
-                      <IconClose size={13} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Sensitivity Slider (0 to 100) */}
-                <div className="flex flex-col gap-1 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Sensitivity:</span>
-                    <span className="font-bold text-[#0284C7]">{sensitivity} / 100</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={sensitivity}
-                    onChange={(e) => onChangeSensitivity?.(parseInt(e.target.value, 10))}
-                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-[#0284C7]"
-                  />
-                  <span className="text-[9px] text-slate-400 leading-tight">
-                    Low stops at cortical bone; high expands across joint bridges
-                  </span>
-                </div>
-
-                {/* Seed Threshold HU Slider */}
-                <div className="flex flex-col gap-1 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Seed Threshold:</span>
-                    <span className="font-bold text-[#0284C7]">{seedThresholdHu} HU</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="-200"
-                    max="1000"
-                    step="10"
-                    value={seedThresholdHu}
-                    onChange={(e) => onChangeSeedThresholdHu?.(parseInt(e.target.value, 10))}
-                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-[#0284C7]"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Threshold (HuHistogramEditor) */}
-            {seedSegmentStep === 2 && activeMask && (
-              <div className="flex flex-col gap-2">
-                <HuHistogramEditor
-                  minHu={activeMask.minHu}
-                  maxHu={activeMask.maxHu}
-                  onChange={(min, max) => onUpdateMask(activeMask.id, { minHu: min, maxHu: max })}
-                  applyToAllMasks={false}
-                  showPresets={true}
-                />
-              </div>
-            )}
-
-            {/* Step 3: Finishing */}
-            {seedSegmentStep === 3 && (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Gap closing distance:</span>
-                    <span className="font-bold text-[#0284C7]">{seedGapClosingMm.toFixed(1)} mm</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="5.0"
-                    step="0.5"
-                    value={seedGapClosingMm}
-                    onChange={(e) => onChangeSeedGapClosingMm?.(parseFloat(e.target.value))}
-                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-[#0284C7]"
-                  />
-                </div>
-
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={seedFillCavities}
-                    onChange={onToggleSeedFillCavities}
-                    className="w-4 h-4 rounded text-[#0284C7] accent-[#0284C7]"
-                  />
-                  <span>Fill internal bone cavities</span>
-                </label>
-
-                <div className="pt-2 flex flex-col gap-1.5">
-                  <button
-                    type="button"
-                    onClick={onApplySeedSegmentToMask}
-                    className="tactile-rubber w-full py-2 rounded-lg text-xs font-bold text-white bg-[#0284C7] hover:bg-sky-700 shadow-xs cursor-pointer"
-                  >
-                    Apply to Active Mask
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onSelectSegmentTool('calculate_3d')}
-                    className="tactile-rubber w-full py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 cursor-pointer"
-                  >
-                    Proceed to Calculate 3D Object →
-                  </button>
-                </div>
-              </div>
-            )}
+          <div className="flex flex-col items-center justify-center p-5 text-center text-slate-400 gap-3 bg-white/60 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
+            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+              Floating Seed Segment Active
+            </span>
+            <span className="text-[11px] text-slate-400 leading-normal">
+              Seed Segment is running inside the floating window. Plant Need and Not Need seeds directly onto the DICOM slice.
+            </span>
+            <button
+              type="button"
+              onClick={() => onSelectSegmentTool('seed_segment')}
+              className="tactile-rubber px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0284C7] hover:bg-sky-600 shadow-xs cursor-pointer"
+            >
+              Focus Window
+            </button>
           </div>
         )}
 

@@ -154,24 +154,14 @@ export async function runFrontendBenchmarkDiagnostic(
 
   const testSeeds = [
     {
-      id: 'test-seed-1',
-      name: 'Need Seed 1',
+      voxel: [midX, midY, midZ] as [number, number, number],
       kind: 'need' as const,
-      x: midX,
-      y: midY,
-      z: midZ,
       hu: volumeVoxels[midZ * sliceStride + midY * width + midX],
-      color: '#22C55E',
     },
     {
-      id: 'test-seed-2',
-      name: 'Not Need 1',
+      voxel: [Math.min(width - 5, midX + 60), midY, midZ] as [number, number, number],
       kind: 'not_need' as const,
-      x: Math.min(width - 5, midX + 60),
-      y: midY,
-      z: midZ,
       hu: -1000,
-      color: '#EF4444',
     },
   ];
 
@@ -197,34 +187,30 @@ export async function runFrontendBenchmarkDiagnostic(
   }
 
   // 6. Region Growing Verification
-  const grownMask = floodFill3D({
-    voxels: volumeVoxels,
+  const grownMask = new Uint8Array(width * height * depth);
+  const filledIndices = floodFill3D(
+    volumeVoxels,
     width,
     height,
     depth,
-    seedX: midX,
-    seedY: midY,
-    seedZ: midZ,
-    minHu: 150,
-    maxHu: 3000,
-  });
-
-  let regionGrowCount = 0;
-  for (let i = 0; i < grownMask.length; i++) {
-    if (grownMask[i] > 0) regionGrowCount++;
-  }
+    [midX, midY, midZ],
+    150,
+    3000,
+    grownMask
+  );
+  const regionGrowCount = filledIndices.length;
 
   // 7. 3D Object Calculation from Mask
   const mockMask: SegmentationMask = {
     id: 'benchmark-mask-1',
     name: 'Benchmark Bone',
     color: '#38BDF8',
+    rgb: [56, 189, 248],
     opacity: 1.0,
     visible: true,
-    data: grownMask,
+    voxelMask: grownMask,
     minHu: 150,
     maxHu: 3000,
-    voxelCount: regionGrowCount,
   };
 
   const calculatedObj = calculate3DObjectFromMask({
@@ -233,10 +219,13 @@ export async function runFrontendBenchmarkDiagnostic(
     height,
     depth,
     spacing,
-    preset: 'Medium',
+    qualityPreset: 'Medium',
+    applySmooth: true,
     smoothIterations: 6,
+    applyReduce: true,
     reducePercent: 30,
-    wrapGapClosingMm: 0,
+    applyWrap: false,
+    wrapMm: 0,
   });
 
   const durationMs = performance.now() - startTime;
@@ -258,7 +247,7 @@ export async function runFrontendBenchmarkDiagnostic(
     meshCalculationVerified: calculatedObj.triangleCount > 0,
     meshTriangleCount: calculatedObj.triangleCount,
     meshVertexCount: calculatedObj.uniquePositions.length / 3,
-    meshBoundsMm: calculatedObj.boundsMm,
+    meshBoundsMm: calculatedObj.boundsMm || { size: [0, 0, 0] },
     durationMs,
     passed: sliceSortingVerified && primarySlices.length > 0 && calculatedObj.triangleCount > 0,
   };
