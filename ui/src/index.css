@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --alabaster: #F8FAFC;
+    --zinc-border: #D4D4D8;
+    --slate: #0F172A;
+    --obsidian: #0F172A;
+    --clinical-blue: #0284C7;
+    --clinical-blue-hover: #0369A1;
+  }
+
+  body {
+    background-color: var(--alabaster);
+    color: var(--slate);
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+    font-weight: 500;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+/* 50% Neumorphic Tactile Rubber Button Physics */
+.tactile-rubber {
+  background-color: #F8FAFC;
+  border: 1px solid #D4D4D8;
+  color: #0F172A;
+  font-weight: 500;
+  box-shadow: 2px 3px 6px rgba(15, 23, 42, 0.08), -1px -1px 4px rgba(255, 255, 255, 0.8);
+  transition: transform 0.14s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.14s ease, background-color 0.12s ease;
+  cursor: pointer;
+  outline: none;
+}
+
+.tactile-rubber:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 4px 6px 12px rgba(15, 23, 42, 0.12), -2px -2px 6px rgba(255, 255, 255, 0.9);
+}
+
+.tactile-rubber:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: inset 2px 3px 6px rgba(15, 23, 42, 0.22), inset -2px -2px 5px rgba(255, 255, 255, 0.85);
+}
+
+.tactile-rubber-active {
+  background-color: #0284C7 !important;
+  border-color: #0284C7 !important;
+  color: #FFFFFF !important;
+  box-shadow: inset 1px 2px 4px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(2, 132, 199, 0.35) !important;
+  font-weight: 600 !important;
+}
+
+.tactile-rubber-active:hover:not(:disabled) {
+  background-color: #0369A1 !important;
+  transform: translateY(-1px);
+  box-shadow: inset 1px 2px 4px rgba(0, 0, 0, 0.28), 0 4px 8px rgba(2, 132, 199, 0.45) !important;
+}
+
+.tactile-rubber:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Dark Studio Mode 50% Neumorphic Dark Rubber Button Physics */
+.dark .tactile-rubber {
+  background-color: #182234;
+  border: 1px solid #2B394E;
+  color: #F8FAFC;
+  box-shadow: 2px 3px 6px rgba(0, 0, 0, 0.45), -1px -1px 3px rgba(255, 255, 255, 0.05);
+}
+
+.dark .tactile-rubber:hover:not(:disabled) {
+  background-color: #1E2E46;
+  border-color: #38BDF8;
+  transform: translateY(-2px);
+  box-shadow: 4px 6px 12px rgba(0, 0, 0, 0.65), -1px -1px 4px rgba(255, 255, 255, 0.08);
+}
+
+.dark .tactile-rubber:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: inset 2px 3px 6px rgba(0, 0, 0, 0.7), inset -1px -1px 3px rgba(255, 255, 255, 0.05);
+}
+
+.dark .tactile-rubber-active {
+  background-color: #0284C7 !important;
+  border-color: #0284C7 !important;
+  color: #FFFFFF !important;
+  box-shadow: inset 1px 2px 4px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(2, 132, 199, 0.5) !important;
+}
+
+/* Custom minimal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #0F172A;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}

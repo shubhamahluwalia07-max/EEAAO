@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "crates/eeaao_core",
+    "crates/stage3_pacs",
+]
+default-members = [
+    "crates/eeaao_core",
+    "crates/stage3_pacs",
+]
+exclude = [
+    "src-tauri",
+]
+resolver = "2"
