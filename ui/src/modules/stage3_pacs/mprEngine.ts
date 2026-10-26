@@ -418,9 +418,9 @@ export class MprVolume {
           for (let m = 0; m < visibleMasks.length; m++) {
             const mask = visibleMasks[m];
             let isInside = false;
-            if (mask.voxelMask) {
+            if (mask.voxelMask && mask.voxelMask.length > 0) {
               isInside = mask.voxelMask[voxelIdx] === 1;
-            } else {
+            } else if (!mask.voxelMask && !mask.name.toLowerCase().includes('manual')) {
               isInside = hu >= mask.minHu && hu <= mask.maxHu;
             }
 

@@ -495,6 +495,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
       minHu: 150,
       maxHu: 3071,
       selected: false,
+      voxelMask: volume ? createEmptyMask(volume.width, volume.height, volume.depth) : undefined,
     };
     setMasks((prev) => [...prev, newMask]);
     setActiveMaskId(newMask.id);
@@ -904,12 +905,19 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
         id: targetMask.id,
         voxelMask: targetMask.voxelMask ? new Uint8Array(targetMask.voxelMask) : undefined,
       };
+      if (volume) {
+        handleUpdateMask(targetMask.id, {
+          voxelMask: createEmptyMask(volume.width, volume.height, volume.depth),
+          exclusionMask: undefined,
+        });
+      }
     }
+    setSeedPoints([]);
     setIsSeedModalOpen(true);
     setIsSegmentMode(true);
     setActiveSegmentTool('seed_segment');
     setSeedSegmentStep(1);
-  }, [activeMask, masks.length, handleCreateMask]);
+  }, [activeMask, masks.length, handleCreateMask, volume]);
 
   // Viewport tool selection that removes/cancels previous uncompleted operations
   const handleSelectViewportTool = useCallback(
@@ -939,7 +947,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
 
       if (points.length === 0) {
         handleUpdateMask(targetMask.id, {
-          voxelMask: priorMaskBackupRef.current?.voxelMask,
+          voxelMask: volume ? createEmptyMask(volume.width, volume.height, volume.depth) : undefined,
           exclusionMask: undefined,
         });
         return;
@@ -1075,8 +1083,31 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
 
   // Combined masks rendered on slices
   const displayMasks: SegmentationMask[] = useMemo(() => {
-    return isSegmentMode ? masks : [];
-  }, [isSegmentMode, masks]);
+    if (!isSegmentMode) return [];
+    if (isSeedModalOpen && activeSegmentTool === 'seed_segment' && seedPoints.length === 0) {
+      return masks.map((m) => {
+        if (m.id === activeMaskId) {
+          return {
+            ...m,
+            voxelMask: volume ? createEmptyMask(volume.width, volume.height, volume.depth) : new Uint8Array(0),
+          };
+        }
+        return m;
+      });
+    }
+    return masks;
+  }, [isSegmentMode, masks, isSeedModalOpen, activeSegmentTool, seedPoints.length, activeMaskId, volume]);
+
+  const effectiveActiveMask = useMemo(() => {
+    if (!isSegmentMode || !activeMask) return null;
+    if (isSeedModalOpen && activeSegmentTool === 'seed_segment' && seedPoints.length === 0) {
+      return {
+        ...activeMask,
+        voxelMask: volume ? createEmptyMask(volume.width, volume.height, volume.depth) : new Uint8Array(0),
+      };
+    }
+    return activeMask;
+  }, [isSegmentMode, activeMask, isSeedModalOpen, activeSegmentTool, seedPoints.length, volume]);
 
   // =========================================================================
   // 3D OBJECT CALCULATION PIPELINE (Quality Presets & Taubin Smoothing)
@@ -1578,7 +1609,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
                     onToggleMaximize={() =>
                       setMaximizedQuadrant(maximizedQuadrant === 1 ? null : 1)
                     }
-                    activeMask={isSegmentMode ? activeMask : null}
+                    activeMask={effectiveActiveMask}
                     masks={displayMasks.length > 0 ? displayMasks : undefined}
                     showCrosshairs={showCrosshairs}
                     isSegmentMode={isSegmentMode}
@@ -1635,7 +1666,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
                     onToggleMaximize={() =>
                       setMaximizedQuadrant(maximizedQuadrant === 2 ? null : 2)
                     }
-                    activeMask={isSegmentMode ? activeMask : null}
+                    activeMask={effectiveActiveMask}
                     masks={displayMasks.length > 0 ? displayMasks : undefined}
                     showCrosshairs={showCrosshairs}
                     isSegmentMode={isSegmentMode}
@@ -1692,7 +1723,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
                     onToggleMaximize={() =>
                       setMaximizedQuadrant(maximizedQuadrant === 3 ? null : 3)
                     }
-                    activeMask={isSegmentMode ? activeMask : null}
+                    activeMask={effectiveActiveMask}
                     masks={displayMasks.length > 0 ? displayMasks : undefined}
                     showCrosshairs={showCrosshairs}
                     isSegmentMode={isSegmentMode}
