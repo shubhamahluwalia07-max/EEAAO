@@ -788,7 +788,7 @@ export const SegmentationDrawer: React.FC<SegmentationDrawerProps> = ({
             <HuHistogramEditor
               minHu={activeMask.minHu}
               maxHu={activeMask.maxHu}
-              onChange={(min, max) => onUpdateMask(activeMask.id, { minHu: min, maxHu: max })}
+              onChange={(min, max) => onUpdateMask(activeMask.id, { minHu: min, maxHu: max, voxelMask: undefined })}
               applyToAllMasks={false}
               showPresets={true}
             />

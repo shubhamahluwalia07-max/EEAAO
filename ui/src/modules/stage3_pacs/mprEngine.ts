@@ -420,7 +420,7 @@ export class MprVolume {
             let isInside = false;
             if (mask.voxelMask && mask.voxelMask.length > 0) {
               isInside = mask.voxelMask[voxelIdx] === 1;
-            } else if (!mask.voxelMask && !mask.name.toLowerCase().includes('manual')) {
+            } else if (!mask.voxelMask) {
               isInside = hu >= mask.minHu && hu <= mask.maxHu;
             }
 

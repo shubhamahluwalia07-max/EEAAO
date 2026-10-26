@@ -495,7 +495,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
       minHu: 150,
       maxHu: 3071,
       selected: false,
-      voxelMask: volume ? createEmptyMask(volume.width, volume.height, volume.depth) : undefined,
+      voxelMask: undefined,
     };
     setMasks((prev) => [...prev, newMask]);
     setActiveMaskId(newMask.id);
@@ -1911,7 +1911,7 @@ export const Step3PacsWorkstationView: React.FC<Step3PacsWorkstationViewProps> =
           onCalculate={() => runLiveSeedSegmentation(seedPoints, seedThresholdHu, sensitivity, activeMaskId)}
           onFinish={handleFinishSeedSegment}
           isCalculating={false}
-          onUpdateMaskHu={(maskId, minHu, maxHu) => handleUpdateMask(maskId, { minHu, maxHu })}
+          onUpdateMaskHu={(maskId, minHu, maxHu) => handleUpdateMask(maskId, { minHu, maxHu, voxelMask: undefined })}
         />
       )}
     </div>

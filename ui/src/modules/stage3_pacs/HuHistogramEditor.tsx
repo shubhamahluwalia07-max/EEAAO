@@ -27,20 +27,43 @@ export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(270);
   const height = 90;
+
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   // Local drafts for editable numeric inputs (enforced on Enter or blur)
   const [minDraft, setMinDraft] = useState<string>(String(minHu));
   const [maxDraft, setMaxDraft] = useState<string>(String(maxHu));
 
-  useEffect(() => {
-    setMinDraft(String(minHu));
-  }, [minHu]);
+  // Draggable handle states
+  const [draggingHandle, setDraggingHandle] = useState<'min' | 'max' | null>(null);
+  const [localMin, setLocalMin] = useState<number>(minHu);
+  const [localMax, setLocalMax] = useState<number>(maxHu);
+  const localValuesRef = useRef<{ min: number; max: number }>({ min: minHu, max: maxHu });
+  const svgRectRef = useRef<DOMRect | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+  const pendingChangeRef = useRef<{ min: number; max: number } | null>(null);
 
   useEffect(() => {
-    setMaxDraft(String(maxHu));
-  }, [maxHu]);
+    if (!draggingHandle) {
+      setMinDraft(String(minHu));
+      setLocalMin(minHu);
+      localValuesRef.current.min = minHu;
+    }
+  }, [minHu, draggingHandle]);
+
+  useEffect(() => {
+    if (!draggingHandle) {
+      setMaxDraft(String(maxHu));
+      setLocalMax(maxHu);
+      localValuesRef.current.max = maxHu;
+    }
+  }, [maxHu, draggingHandle]);
 
   // Observe container width
   useEffect(() => {
@@ -106,14 +129,6 @@ export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
     [containerWidth]
   );
 
-  const xToHu = useCallback(
-    (x: number) => {
-      const norm = Math.max(0, Math.min(1, x / containerWidth));
-      return Math.round(HIST_MIN_HU + norm * HIST_RANGE);
-    },
-    [containerWidth]
-  );
-
   // SVG Path generator
   const fullPathD = useMemo(() => {
     if (containerWidth <= 0) return '';
@@ -127,38 +142,104 @@ export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
     return d;
   }, [binCounts, containerWidth, height]);
 
-  // Draggable handle states
-  const [draggingHandle, setDraggingHandle] = useState<'min' | 'max' | null>(null);
-
-  const minX = huToX(minHu);
-  const maxX = huToX(maxHu);
+  const minX = huToX(localMin);
+  const maxX = huToX(localMax);
 
   const handleMouseDownHandle = (handle: 'min' | 'max') => (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDraggingHandle(handle);
+    if (svgRef.current) {
+      svgRectRef.current = svgRef.current.getBoundingClientRect();
+    }
+  };
+
+  const handleSvgMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (draggingHandle) return;
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    svgRectRef.current = rect;
+    const clickX = e.clientX - rect.left;
+    const distMin = Math.abs(clickX - minX);
+    const distMax = Math.abs(clickX - maxX);
+    const chosen: 'min' | 'max' = distMin <= distMax ? 'min' : 'max';
+    setDraggingHandle(chosen);
+
+    const norm = Math.max(0, Math.min(1, clickX / rect.width));
+    const newHu = Math.round(HIST_MIN_HU + norm * HIST_RANGE);
+    let curMin = localValuesRef.current.min;
+    let curMax = localValuesRef.current.max;
+
+    if (chosen === 'min') {
+      curMin = Math.min(curMax - 10, Math.max(HIST_MIN_HU, newHu));
+      setLocalMin(curMin);
+      localValuesRef.current.min = curMin;
+      setMinDraft(String(curMin));
+    } else {
+      curMax = Math.max(curMin + 10, Math.min(HIST_MAX_HU, newHu));
+      setLocalMax(curMax);
+      localValuesRef.current.max = curMax;
+      setMaxDraft(String(curMax));
+    }
+
+    pendingChangeRef.current = { min: curMin, max: curMax };
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        if (pendingChangeRef.current) {
+          onChangeRef.current(pendingChangeRef.current.min, pendingChangeRef.current.max);
+        }
+      });
+    }
   };
 
   useEffect(() => {
     if (!draggingHandle) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const el = containerRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
+      const rect = svgRectRef.current || svgRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return;
       const clickX = e.clientX - rect.left;
-      const newHu = xToHu(clickX);
+      const norm = Math.max(0, Math.min(1, clickX / rect.width));
+      const newHu = Math.round(HIST_MIN_HU + norm * HIST_RANGE);
+
+      let curMin = localValuesRef.current.min;
+      let curMax = localValuesRef.current.max;
 
       if (draggingHandle === 'min') {
-        const clampedMin = Math.min(maxHu - 10, Math.max(HIST_MIN_HU, newHu));
-        onChange(clampedMin, maxHu);
+        curMin = Math.min(curMax - 10, Math.max(HIST_MIN_HU, newHu));
+        setLocalMin(curMin);
+        localValuesRef.current.min = curMin;
+        setMinDraft(String(curMin));
       } else if (draggingHandle === 'max') {
-        const clampedMax = Math.max(minHu + 10, Math.min(HIST_MAX_HU, newHu));
-        onChange(minHu, clampedMax);
+        curMax = Math.max(curMin + 10, Math.min(HIST_MAX_HU, newHu));
+        setLocalMax(curMax);
+        localValuesRef.current.max = curMax;
+        setMaxDraft(String(curMax));
+      }
+
+      pendingChangeRef.current = { min: curMin, max: curMax };
+
+      // Dispatch change at most once per animation frame to prevent main thread rendering freeze
+      if (rafIdRef.current === null) {
+        rafIdRef.current = requestAnimationFrame(() => {
+          rafIdRef.current = null;
+          if (pendingChangeRef.current) {
+            onChangeRef.current(pendingChangeRef.current.min, pendingChangeRef.current.max);
+          }
+        });
       }
     };
 
     const handleMouseUp = () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      if (pendingChangeRef.current) {
+        onChangeRef.current(pendingChangeRef.current.min, pendingChangeRef.current.max);
+        pendingChangeRef.current = null;
+      }
       setDraggingHandle(null);
     };
 
@@ -167,29 +248,37 @@ export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     };
-  }, [draggingHandle, minHu, maxHu, onChange, xToHu]);
+  }, [draggingHandle]);
 
   // Commit numeric inputs on Enter or blur
   const commitMinInput = () => {
     const parsed = parseInt(minDraft, 10);
     if (!isNaN(parsed)) {
-      const clamped = Math.max(HIST_MIN_HU, Math.min(maxHu - 10, parsed));
-      onChange(clamped, maxHu);
+      const clamped = Math.max(HIST_MIN_HU, Math.min(localMax - 10, parsed));
+      setLocalMin(clamped);
+      localValuesRef.current.min = clamped;
+      onChangeRef.current(clamped, localMax);
       setMinDraft(String(clamped));
     } else {
-      setMinDraft(String(minHu));
+      setMinDraft(String(localMin));
     }
   };
 
   const commitMaxInput = () => {
     const parsed = parseInt(maxDraft, 10);
     if (!isNaN(parsed)) {
-      const clamped = Math.min(HIST_MAX_HU, Math.max(minHu + 10, parsed));
-      onChange(minHu, clamped);
+      const clamped = Math.min(HIST_MAX_HU, Math.max(localMin + 10, parsed));
+      setLocalMax(clamped);
+      localValuesRef.current.max = clamped;
+      onChangeRef.current(localMin, clamped);
       setMaxDraft(String(clamped));
     } else {
-      setMaxDraft(String(maxHu));
+      setMaxDraft(String(localMax));
     }
   };
 
@@ -213,10 +302,12 @@ export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
         className="relative w-full h-[115px] bg-slate-900/90 dark:bg-[#0B132B] rounded-xl border border-slate-700/60 p-1.5 overflow-hidden shadow-inner"
       >
         <svg
+          ref={svgRef}
           width={containerWidth}
           height={height}
-          className="overflow-visible block"
+          className="overflow-visible block cursor-pointer"
           style={{ width: `${containerWidth}px`, height: `${height}px` }}
+          onMouseDown={handleSvgMouseDown}
         >
           <defs>
             {/* Smooth sky-blue vertical gradient for active range */}
@@ -277,60 +368,86 @@ export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
           />
 
           {/* Draggable Vertical Boundary Handle: Min HU */}
-          <line
-            x1={minX}
-            y1="0"
-            x2={minX}
-            y2={height}
-            stroke="#38BDF8"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <circle
-            cx={minX}
-            cy="10"
-            r="6"
-            fill="#0284C7"
-            stroke="#FFFFFF"
-            strokeWidth="2"
-            className="cursor-ew-resize hover:scale-125 transition-transform"
+          <g
+            className="cursor-ew-resize group"
             onMouseDown={handleMouseDownHandle('min')}
-          />
+          >
+            {/* Wide 28px invisible grab corridor */}
+            <rect
+              x={minX - 14}
+              y="0"
+              width="28"
+              height={height}
+              fill="transparent"
+            />
+            <line
+              x1={minX}
+              y1="0"
+              x2={minX}
+              y2={height}
+              stroke="#38BDF8"
+              strokeWidth="2"
+              strokeLinecap="round"
+              className="pointer-events-none"
+            />
+            <circle
+              cx={minX}
+              cy="10"
+              r="6.5"
+              fill="#0284C7"
+              stroke="#FFFFFF"
+              strokeWidth="2"
+              className="pointer-events-none drop-shadow-md group-hover:scale-125 transition-transform"
+            />
+          </g>
 
           {/* Draggable Vertical Boundary Handle: Max HU */}
-          <line
-            x1={maxX}
-            y1="0"
-            x2={maxX}
-            y2={height}
-            stroke="#38BDF8"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <circle
-            cx={maxX}
-            cy="10"
-            r="6"
-            fill="#0284C7"
-            stroke="#FFFFFF"
-            strokeWidth="2"
-            className="cursor-ew-resize hover:scale-125 transition-transform"
+          <g
+            className="cursor-ew-resize group"
             onMouseDown={handleMouseDownHandle('max')}
-          />
+          >
+            {/* Wide 28px invisible grab corridor */}
+            <rect
+              x={maxX - 14}
+              y="0"
+              width="28"
+              height={height}
+              fill="transparent"
+            />
+            <line
+              x1={maxX}
+              y1="0"
+              x2={maxX}
+              y2={height}
+              stroke="#38BDF8"
+              strokeWidth="2"
+              strokeLinecap="round"
+              className="pointer-events-none"
+            />
+            <circle
+              cx={maxX}
+              cy="10"
+              r="6.5"
+              fill="#0284C7"
+              stroke="#FFFFFF"
+              strokeWidth="2"
+              className="pointer-events-none drop-shadow-md group-hover:scale-125 transition-transform"
+            />
+          </g>
         </svg>
 
         {/* Floating Numeric Callout Pills directly beneath handles */}
         <div
           className="absolute bottom-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#0284C7] text-white shadow-md pointer-events-none -translate-x-1/2 whitespace-nowrap"
-          style={{ left: `${Math.max(20, Math.min(containerWidth - 20, minX))}px` }}
+          style={{ left: `${Math.max(22, Math.min(containerWidth - 22, minX))}px` }}
         >
-          {minHu}
+          {localMin}
         </div>
         <div
           className="absolute bottom-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#0284C7] text-white shadow-md pointer-events-none -translate-x-1/2 whitespace-nowrap"
-          style={{ left: `${Math.max(20, Math.min(containerWidth - 20, maxX))}px` }}
+          style={{ left: `${Math.max(22, Math.min(containerWidth - 22, maxX))}px` }}
         >
-          {maxHu}
+          {localMax}
         </div>
       </div>
 
@@ -399,9 +516,16 @@ export const HuHistogramEditor: React.FC<HuHistogramEditorProps> = ({
             <button
               key={preset.name}
               type="button"
-              onClick={() => onChange(preset.min, preset.max)}
+              onClick={() => {
+                setLocalMin(preset.min);
+                setLocalMax(preset.max);
+                localValuesRef.current = { min: preset.min, max: preset.max };
+                setMinDraft(String(preset.min));
+                setMaxDraft(String(preset.max));
+                onChangeRef.current(preset.min, preset.max);
+              }}
               className={`flex-1 py-1 rounded text-[10px] font-semibold transition-colors cursor-pointer border ${
-                minHu === preset.min && maxHu === preset.max
+                localMin === preset.min && localMax === preset.max
                   ? 'bg-[#0284C7] text-white border-[#0284C7] shadow-xs'
                   : 'bg-white dark:bg-[#151D2C] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#1E293B] hover:border-slate-300 dark:hover:border-slate-700'
               }`}

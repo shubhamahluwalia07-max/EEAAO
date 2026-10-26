@@ -419,7 +419,9 @@ export const SeedSegmentModal: React.FC<SeedSegmentModalProps> = ({
 
           {currentTab === 2 && !activeMask && (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400 gap-3">
-              <IconLayers size={24} className="text-slate-500" />
+              <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-500">
+                <IconPlus size={18} />
+              </div>
               <span className="text-xs">No active mask. Please add a manual mask first.</span>
               <button
                 type="button"
