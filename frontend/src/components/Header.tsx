@@ -6,14 +6,6 @@ import {
   Minimize2,
   ChevronUp,
   ChevronDown,
-  Activity,
-  Layers,
-  Box,
-  Cpu,
-  Printer,
-  Sparkles,
-  Sliders,
-  User,
 } from 'lucide-react';
 import { ModuleType, TrackType } from '../types';
 
@@ -30,15 +22,15 @@ interface HeaderProps {
   onToggleCollapse: () => void;
 }
 
-const MODULES: { id: ModuleType; label: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: 'Account', label: 'Account', icon: User },
-  { id: 'Datum', label: 'Datum', icon: Layers },
-  { id: 'Rados', label: 'Rados', icon: Activity },
-  { id: 'Design', label: 'Design', icon: Box },
-  { id: 'FEA', label: 'FEA', icon: Cpu },
-  { id: 'Slicer', label: 'Slicer', icon: Sliders },
-  { id: 'Print Factory', label: 'Print Factory', icon: Printer },
-  { id: 'I 5.0', label: 'I 5.0', icon: Sparkles },
+const MODULES: { id: ModuleType; label: string }[] = [
+  { id: 'Account', label: 'Account' },
+  { id: 'Datum', label: 'Datum' },
+  { id: 'Rados', label: 'Rados' },
+  { id: 'Design', label: 'Design' },
+  { id: 'FEA', label: 'FEA' },
+  { id: 'Slicer', label: 'Slicer' },
+  { id: 'Print Factory', label: 'Print Factory' },
+  { id: 'I 5.0', label: 'I 5.0' },
 ];
 
 export const Header: React.FC<HeaderProps> = ({
@@ -124,16 +116,6 @@ export const Header: React.FC<HeaderProps> = ({
             const opacity = Math.max(0.35, 1 - distance * 0.18);
             const scale = isActive ? 1.05 : Math.max(0.85, 1 - distance * 0.05);
 
-            const Icon = mod.icon;
-            const iconTint =
-              mod.id === 'Datum' ? 'text-emerald-500' :
-              mod.id === 'Rados' ? 'text-[#0284C7]' :
-              mod.id === 'Design' ? 'text-purple-500' :
-              mod.id === 'FEA' ? 'text-amber-500' :
-              mod.id === 'Slicer' ? 'text-rose-500' :
-              mod.id === 'Print Factory' ? 'text-cyan-500' :
-              mod.id === 'I 5.0' ? 'text-indigo-400' : 'text-slate-400';
-
             return (
               <button
                 key={mod.id}
@@ -145,13 +127,12 @@ export const Header: React.FC<HeaderProps> = ({
                   transition: 'all 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
                   transformStyle: 'preserve-3d',
                 }}
-                className={`tactile-rubber relative px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold whitespace-nowrap cursor-pointer ${
+                className={`tactile-rubber relative px-3.5 py-1.5 rounded-xl flex items-center justify-center text-xs font-bold whitespace-nowrap cursor-pointer ${
                   isActive
                     ? 'neu-convex text-[#0284C7] dark:text-[#38BDF8] border border-sky-300 dark:border-sky-800 shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 neu-btn'
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-[#0284C7] dark:text-[#38BDF8]' : iconTint}`} />
                 <span>{mod.label}</span>
                 {isActive && (
                   <span className="absolute -bottom-[9px] left-3 right-3 h-[2.5px] bg-gradient-to-r from-[#0284C7] to-cyan-400 rounded-full shadow-sm shadow-sky-500/50" />

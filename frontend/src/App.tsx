@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ModuleType, TrackType, MeshObjectItem, IngestionResult, SeriesCard } from './types';
 import { Header } from './components/Header';
+import { DatumRegistryView } from './modules/datum/DatumRegistryView';
 import { RadosView } from './modules/rados/RadosView';
 import { DesignStudioView } from './modules/design/DesignStudioView';
+import { FeaModuleView } from './modules/fea/FeaModuleView';
+import { SlicerModuleView } from './modules/slicer/SlicerModuleView';
 import { ImportWizardView } from './modules/rados/ImportWizardView';
 
 export const App: React.FC = () => {
-  const [activeModule, setActiveModule] = useState<ModuleType>('Rados');
+  const [activeModule, setActiveModule] = useState<ModuleType>('Datum');
   const [activeTrack, setActiveTrack] = useState<TrackType>('Medical');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState<boolean>(false);
+  const [isWizardOpen, setIsWizardOpen] = useState<boolean>(false);
 
   // Ingested study & series state across modules
   const [activeStudy, setActiveStudy] = useState<IngestionResult | null>(null);
@@ -100,12 +104,20 @@ export const App: React.FC = () => {
     };
   }, [toggleFullscreen]);
 
+  const [openSeriesSelectorOnMount, setOpenSeriesSelectorOnMount] = useState<boolean>(false);
+
+  const handleSelectModule = useCallback((mod: ModuleType) => {
+    setIsWizardOpen(false);
+    setOpenSeriesSelectorOnMount(false);
+    setActiveModule(mod);
+  }, []);
+
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#F8FAFC] dark:bg-[#090D16] text-[#0F172A] dark:text-[#F8FAFC]">
       {/* Single Unified Top Bar */}
       <Header
         activeModule={activeModule}
-        onSelectModule={setActiveModule}
+        onSelectModule={handleSelectModule}
         activeTrack={activeTrack}
         onSelectTrack={setActiveTrack}
         isDarkMode={isDarkMode}
@@ -119,28 +131,47 @@ export const App: React.FC = () => {
       {/* Main View Area */}
       <main className="flex-1 w-full overflow-hidden relative">
         {activeModule === 'Datum' && (
-          <ImportWizardView
-            onCompleteImport={(study, series, preset) => {
-              setActiveStudy(study);
-              setActiveSeries(series);
-              setInitialPreset(preset);
-              setActiveModule('Rados');
-            }}
-            onCancel={() => setActiveModule('Rados')}
-          />
+          isWizardOpen ? (
+            <ImportWizardView
+              onCompleteImport={(study, series, preset) => {
+                setActiveStudy(study);
+                setActiveSeries(series);
+                setInitialPreset(preset);
+                setIsWizardOpen(false);
+                setOpenSeriesSelectorOnMount(true);
+                setActiveModule('Rados');
+              }}
+              onCancel={() => setIsWizardOpen(false)}
+            />
+          ) : (
+            <DatumRegistryView
+              onLaunchRados={(study, series) => {
+                setActiveStudy(study);
+                setActiveSeries(series);
+                setOpenSeriesSelectorOnMount(false);
+                setIsWizardOpen(false);
+                setActiveModule('Rados');
+              }}
+              onOpenImportWizard={() => setIsWizardOpen(true)}
+            />
+          )
         )}
 
         {activeModule === 'Rados' && (
           <RadosView
-            onNavigateModule={setActiveModule}
+            onNavigateModule={handleSelectModule}
             onSendMeshToDesign={(mesh) => {
               setDesignMesh(mesh);
-              setActiveModule('Design');
+              handleSelectModule('Design');
             }}
             initialStudy={activeStudy}
             initialSeries={activeSeries}
             initialPreset={initialPreset}
-            onOpenImportWizard={() => setActiveModule('Datum')}
+            openSeriesModalInitially={openSeriesSelectorOnMount}
+            onOpenImportWizard={() => {
+              setIsWizardOpen(true);
+              setActiveModule('Datum');
+            }}
           />
         )}
 
@@ -151,14 +182,32 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeModule !== 'Datum' && activeModule !== 'Rados' && activeModule !== 'Design' && (
+        {activeModule === 'FEA' && (
+          <FeaModuleView
+            activeMesh={designMesh}
+            onNavigateModule={setActiveModule}
+          />
+        )}
+
+        {activeModule === 'Slicer' && (
+          <SlicerModuleView
+            activeMesh={designMesh}
+            onNavigateModule={setActiveModule}
+          />
+        )}
+
+        {activeModule !== 'Datum' &&
+          activeModule !== 'Rados' &&
+          activeModule !== 'Design' &&
+          activeModule !== 'FEA' &&
+          activeModule !== 'Slicer' && (
           <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
             <div className="neu-convex p-8 rounded-3xl border border-white/60 dark:border-white/5 shadow-2xl max-w-md flex flex-col items-center gap-3">
               <span className="text-sm font-bold text-[#0284C7]">
                 {activeModule} Module
               </span>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Connect anatomical structures from Rados and Design directly into the {activeModule} workflow.
+                Connect anatomical models and surgical fixtures directly into the {activeModule} production pipeline.
               </p>
               <button
                 type="button"

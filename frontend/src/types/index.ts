@@ -120,3 +120,57 @@ export interface SeedSegmentBone {
   min_hu: number;
   max_hu: number;
 }
+
+// ----------------- Datum Registry & EDC Types -----------------
+
+export interface PatientCohort {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  patient_count: number;
+  lead_investigator: string;
+}
+
+export interface DynamicEDCData {
+  ao_ota_classification?: string;
+  injury_severity_score?: number;
+  scanogram_verified?: boolean;
+  implant_type?: string;
+  pre_op_notes?: string;
+  post_op_rom_degrees?: number;
+  surgeon_name?: string;
+  follow_up_weeks?: number;
+  custom_fields?: Record<string, any>;
+}
+
+export interface PatientRecord {
+  id: string;
+  cr_number: string;
+  name: string;
+  age: number;
+  gender: string;
+  cohort_id: string;
+  diagnosis: string;
+  modalities: string[];
+  study_date: string;
+  dicom_path?: string;
+  edc_data: DynamicEDCData;
+  created_at: string;
+  updated_at: string;
+}
+
+// ----------------- Design Studio Types -----------------
+
+export interface DesignMeshItem {
+  mesh_id: string;
+  name: string;
+  color: string;
+  num_vertices: number;
+  num_triangles: number;
+  bounds: {
+    min: [number, number, number];
+    max: [number, number, number];
+  };
+  metadata?: Record<string, any>;
+}

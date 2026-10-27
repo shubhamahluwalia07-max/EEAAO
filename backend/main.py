@@ -12,6 +12,8 @@ from pydantic import BaseModel
 from services.dicom_service import dicom_service
 from services.segmentation_service import segmentation_service
 from services.mesh_service import mesh_service
+from services.design_service import design_service
+from routers import datum_router
 
 app = FastAPI(title="MEDAM Studio Scientific Backend", version="1.0.0")
 
@@ -23,6 +25,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register Sub-Routers
+app.include_router(datum_router.router)
 
 # ----------------- Models -----------------
 class IngestRequest(BaseModel):
@@ -316,3 +321,144 @@ def delete_object(object_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Object not found.")
     return {"success": True}
+
+# ----------------- Design Module Endpoints -----------------
+
+class DesignBridgeRequest(BaseModel):
+    object_id: str
+
+class CutPlaneRequest(BaseModel):
+    mesh_id: str
+    plane_origin: List[float] = [0.0, 0.0, 0.0]
+    plane_normal: List[float] = [0.0, 0.0, 1.0]
+
+class DrillGuideRequest(BaseModel):
+    mesh_id: str
+    center: List[float] = [0.0, 0.0, 0.0]
+    direction: List[float] = [0.0, 0.0, 1.0]
+    diameter_mm: float = 3.5
+    depth_mm: float = 40.0
+
+class PlateLoftRequest(BaseModel):
+    mesh_id: str
+    thickness_mm: float = 2.5
+    offset_mm: float = 0.2
+
+class ICPAlignRequest(BaseModel):
+    source_mesh_id: str
+    target_mesh_id: str
+    max_iterations: int = 30
+
+class MirrorRequest(BaseModel):
+    mesh_id: str
+    axis: str = "x"
+
+class HandoffRequest(BaseModel):
+    mesh_id: str
+    target_module: str
+
+@app.post("/api/design/session/init-from-rados")
+def init_design_from_rados(req: DesignBridgeRequest):
+    if req.object_id not in mesh_service.objects:
+        raise HTTPException(status_code=404, detail=f"Mesh object {req.object_id} not found in Rados.")
+    obj = mesh_service.objects[req.object_id]
+    loaded = design_service.load_from_mesh_object(obj)
+    return {"status": "success", "mesh": loaded}
+
+@app.get("/api/design/session/meshes")
+def list_design_meshes():
+    return design_service.list_meshes()
+
+@app.get("/api/design/mesh/{mesh_id}/binary")
+def get_design_mesh_binary(mesh_id: str):
+    try:
+        bin_data, _ = design_service.get_mesh_binary(mesh_id)
+        return Response(content=bin_data, media_type="application/octet-stream")
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
+@app.post("/api/design/cut-plane")
+def cut_plane(req: CutPlaneRequest):
+    try:
+        return design_service.apply_cut_plane(req.mesh_id, req.plane_origin, req.plane_normal)
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as ex:
+        raise HTTPException(status_code=400, detail=str(ex))
+
+@app.post("/api/design/drill-guide")
+def drill_guide(req: DrillGuideRequest):
+    try:
+        return design_service.apply_drill_guide(
+            req.mesh_id, req.center, req.direction, req.diameter_mm, req.depth_mm
+        )
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as ex:
+        raise HTTPException(status_code=400, detail=str(ex))
+
+@app.post("/api/design/plate-loft")
+def plate_loft(req: PlateLoftRequest):
+    try:
+        return design_service.generate_guide_plate(req.mesh_id, req.thickness_mm, req.offset_mm)
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as ex:
+        raise HTTPException(status_code=400, detail=str(ex))
+
+@app.post("/api/design/align-icp")
+def align_icp(req: ICPAlignRequest):
+    try:
+        return design_service.align_icp(req.source_mesh_id, req.target_mesh_id, req.max_iterations)
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as ex:
+        raise HTTPException(status_code=400, detail=str(ex))
+
+@app.post("/api/design/mirror")
+def mirror(req: MirrorRequest):
+    try:
+        return design_service.apply_mirror(req.mesh_id, req.axis)
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as ex:
+        raise HTTPException(status_code=400, detail=str(ex))
+
+@app.get("/api/design/mesh/{mesh_id}/export-stl")
+def export_design_stl(mesh_id: str):
+    try:
+        stl_bytes = design_service.export_stl(mesh_id)
+        filename = f"medam_design_{mesh_id}.stl"
+        return Response(
+            content=stl_bytes,
+            media_type="application/sla",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as ex:
+        raise HTTPException(status_code=400, detail=str(ex))
+
+@app.post("/api/design/handoff")
+def design_handoff(req: HandoffRequest):
+    mesh = design_service.get_mesh(req.mesh_id)
+    if not mesh:
+        raise HTTPException(status_code=404, detail=f"Mesh {req.mesh_id} not found in Design Studio.")
+    
+    target = req.target_module.lower()
+    return {
+        "status": "success",
+        "mesh_id": req.mesh_id,
+        "target_module": target,
+        "payload": {
+            "name": mesh.name,
+            "num_vertices": len(mesh.vertices),
+            "num_triangles": len(mesh.faces),
+            "ready_for_meshing": True,
+            "ready_for_slicing": True,
+            "recommended_layer_height_mm": 0.16,
+            "recommended_infill_percent": 100 if "plate" in mesh.name.lower() else 30
+        }
+    }

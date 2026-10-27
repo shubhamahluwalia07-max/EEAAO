@@ -43,10 +43,9 @@ interface RadosViewProps {
   initialStudy?: IngestionResult | null;
   initialSeries?: SeriesCard | null;
   initialPreset?: { minHu: number; maxHu: number; quality: string } | null;
+  openSeriesModalInitially?: boolean;
   onOpenImportWizard?: () => void;
 }
-
-const BENCHMARK_PATH = 'C:\\Users\\ShubhamAhluwalia\\Downloads\\Compressed\\KAMLESH 202603583814.zip';
 
 export const RadosView: React.FC<RadosViewProps> = ({
   onNavigateModule,
@@ -54,13 +53,14 @@ export const RadosView: React.FC<RadosViewProps> = ({
   initialStudy,
   initialSeries,
   initialPreset,
+  openSeriesModalInitially,
   onOpenImportWizard,
 }) => {
   // Study and Series state
   const [activeStudy, setActiveStudy] = useState<IngestionResult | null>(initialStudy || null);
   const [selectedSeries, setSelectedSeries] = useState<SeriesCard | null>(initialSeries || null);
   const [volumeData, setVolumeData] = useState<Volume3DData | null>(null);
-  const [isSeriesModalOpen, setIsSeriesModalOpen] = useState<boolean>(false);
+  const [isSeriesModalOpen, setIsSeriesModalOpen] = useState<boolean>(openSeriesModalInitially || false);
   const [isImportWizardOpen, setIsImportWizardOpen] = useState<boolean>(false);
 
   // Ingestion / Loading progress
@@ -218,8 +218,11 @@ export const RadosView: React.FC<RadosViewProps> = ({
   useEffect(() => {
     if (initialStudy) {
       setActiveStudy(initialStudy);
+      if (openSeriesModalInitially) {
+        setIsSeriesModalOpen(true);
+      }
     }
-    if (initialSeries) {
+    if (initialSeries && !openSeriesModalInitially) {
       loadSeriesVolume(initialSeries);
     }
     if (initialPreset) {
@@ -227,7 +230,7 @@ export const RadosView: React.FC<RadosViewProps> = ({
       setThresholdMax(initialPreset.maxHu);
       setMeshQuality((initialPreset.quality as any) || 'Optimal');
     }
-  }, [initialStudy, initialSeries, initialPreset, loadSeriesVolume]);
+  }, [initialStudy, initialSeries, initialPreset, openSeriesModalInitially, loadSeriesVolume]);
 
   // Fetch masks from backend
   const fetchMasks = async (seriesId: string) => {
@@ -926,17 +929,24 @@ export const RadosView: React.FC<RadosViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Quick Benchmark Loader */}
+        {/* Right: Import / Series Actions */}
         <div className="flex items-center gap-2">
           {!volumeData && (
             <button
               type="button"
-              onClick={() => runIngest(BENCHMARK_PATH)}
-              disabled={isIngesting}
-              className="tactile-rubber px-3 py-1 rounded-xl text-xs font-semibold text-white bg-[#0284C7] hover:bg-sky-700 shadow-md shadow-sky-600/25 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              onClick={() => setIsImportWizardOpen(true)}
+              className="tactile-rubber neu-primary px-3.5 py-1.5 rounded-xl text-xs font-bold text-white shadow-md shadow-sky-600/30 flex items-center gap-1.5 cursor-pointer"
             >
-              <Play className="w-3.5 h-3.5" />
-              <span>Load Benchmark (Kamlesh)</span>
+              <span>Import DICOM</span>
+            </button>
+          )}
+          {activeStudy && (
+            <button
+              type="button"
+              onClick={() => setIsSeriesModalOpen(true)}
+              className="tactile-rubber neu-btn px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 hover:text-[#0284C7] cursor-pointer shadow-sm"
+            >
+              <span>Select Series</span>
             </button>
           )}
         </div>

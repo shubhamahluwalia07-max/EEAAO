@@ -10,6 +10,26 @@ import pydicom
 from pydicom.dataset import Dataset
 import SimpleITK as sitk
 
+def safe_float(val: Any, default: float = 0.0) -> float:
+    if val is None or val == "":
+        return float(default)
+    if isinstance(val, (list, tuple)) or (hasattr(val, "__iter__") and not isinstance(val, (str, bytes))):
+        val = list(val)[0] if len(list(val)) > 0 else default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return float(default)
+
+def safe_float_list(val: Any, expected_len: int, default_list: List[float]) -> List[float]:
+    if val is None:
+        return list(default_list)
+    try:
+        res = [float(x) for x in val]
+        return res if len(res) >= expected_len else list(default_list)
+    except (ValueError, TypeError):
+        return list(default_list)
+
+
 class DicomSeriesData:
     def __init__(self, series_id: str, description: str, modality: str):
         self.series_id: str = series_id
@@ -99,11 +119,19 @@ class DicomService:
                 modality = getattr(ds, "Modality", "OT")
                 desc = getattr(ds, "SeriesDescription", f"Series {series_uid[-6:]}")
 
+                # Safely skip non-image DICOM files (such as Modality SR or files without image pixels)
+                mod_str = str(modality).strip().upper()
+                if mod_str in ("SR", "DOC", "KO", "PR", "REG", "FID", "RTPLAN", "RWV", "SEG", "RAW"):
+                    continue
+
+                rows = safe_float(getattr(ds, "Rows", None), 0)
+                cols = safe_float(getattr(ds, "Columns", None), 0)
+                if rows <= 0 or cols <= 0:
+                    continue
+
                 # Compute spatial position along slice normal
-                iop = getattr(ds, "ImageOrientationPatient", [1, 0, 0, 0, 1, 0])
-                ipp = getattr(ds, "ImagePositionPatient", [0, 0, 0])
-                iop = [float(v) for v in iop]
-                ipp = [float(v) for v in ipp]
+                iop = safe_float_list(getattr(ds, "ImageOrientationPatient", None), 6, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+                ipp = safe_float_list(getattr(ds, "ImagePositionPatient", None), 3, [0.0, 0.0, 0.0])
                 rx, ry, rz = iop[0:3]
                 cx, cy, cz = iop[3:6]
                 normal = np.cross([rx, ry, rz], [cx, cy, cz])
@@ -122,8 +150,8 @@ class DicomService:
                         "patient_name": str(getattr(ds, "PatientName", "Anonymous")),
                         "patient_id": str(getattr(ds, "PatientID", "EX-9021")),
                         "study_date": str(getattr(ds, "StudyDate", "")),
-                        "window_center": float(getattr(ds, "WindowCenter", 40) if not isinstance(getattr(ds, "WindowCenter", 40), (list, pydicom.multival.MultiValue)) else getattr(ds, "WindowCenter")[0]),
-                        "window_width": float(getattr(ds, "WindowWidth", 400) if not isinstance(getattr(ds, "WindowWidth", 400), (list, pydicom.multival.MultiValue)) else getattr(ds, "WindowWidth")[0]),
+                        "window_center": safe_float(getattr(ds, "WindowCenter", 40.0), 40.0),
+                        "window_width": safe_float(getattr(ds, "WindowWidth", 400.0), 400.0),
                     }
 
                 series_groups[series_uid].append((dist, fpath, ds))
@@ -177,9 +205,9 @@ class DicomService:
             series_data.raw_tags = raw_tags
 
             # Spacing
-            pix_spacing = getattr(first_ds, "PixelSpacing", [1.0, 1.0])
-            sx = float(pix_spacing[1]) if len(pix_spacing) > 1 else 1.0
-            sy = float(pix_spacing[0]) if len(pix_spacing) > 0 else 1.0
+            pix_spacing = safe_float_list(getattr(first_ds, "PixelSpacing", None), 2, [1.0, 1.0])
+            sx = pix_spacing[1]
+            sy = pix_spacing[0]
             sz = 1.0
             if len(slice_list) > 1:
                 diffs = [abs(slice_list[i+1][0] - slice_list[i][0]) for i in range(len(slice_list)-1)]
@@ -187,15 +215,13 @@ class DicomService:
                 if valid_diffs:
                     sz = float(np.median(valid_diffs))
             else:
-                sz = float(getattr(first_ds, "SliceThickness", 1.0))
+                sz = safe_float(getattr(first_ds, "SliceThickness", 1.0), 1.0)
 
             series_data.spacing = [sx, sy, sz]
             series_data.slice_thickness = sz
             series_data.pixel_spacing = [sx, sy]
-            iop = getattr(first_ds, "ImageOrientationPatient", [1, 0, 0, 0, 1, 0])
-            ipp = getattr(first_ds, "ImagePositionPatient", [0, 0, 0])
-            series_data.origin = [float(v) for v in ipp]
-            series_data.direction = [float(v) for v in iop]
+            series_data.origin = safe_float_list(getattr(first_ds, "ImagePositionPatient", None), 3, [0.0, 0.0, 0.0])
+            series_data.direction = safe_float_list(getattr(first_ds, "ImageOrientationPatient", None), 6, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
 
             # Load full pixel data and construct 3D HU volume
             if progress_callback:
@@ -254,8 +280,8 @@ class DicomService:
                                 arr = arr[0]
                             elif arr.ndim > 2:
                                 arr = arr.reshape((arr.shape[-2], arr.shape[-1]))
-                            slope = float(getattr(full_ds, "RescaleSlope", 1.0))
-                            intercept = float(getattr(full_ds, "RescaleIntercept", 0.0))
+                            slope = safe_float(getattr(full_ds, "RescaleSlope", 1.0), 1.0)
+                            intercept = safe_float(getattr(full_ds, "RescaleIntercept", 0.0), 0.0)
                             volume_slices.append(arr * slope + intercept)
                         except Exception:
                             continue
@@ -275,6 +301,8 @@ class DicomService:
                     series_data.histogram = hist.tolist()
                 else:
                     series_data.dims = [512, 512, len(slice_list)]
+                    series_data.volume_hu = np.zeros((len(slice_list), 512, 512), dtype=np.int16)
+                    series_data.histogram = [0] * 100
 
             self.series_store[s_uid] = series_data
 
