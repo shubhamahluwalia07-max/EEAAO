@@ -22,10 +22,12 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { PatientRecord, PatientCohort, DynamicEDCData, IngestionResult, SeriesCard } from '../../types';
+import { safeJson, safeFetchJson, parseResponseSafe } from '../../utils/api';
 
 interface DatumRegistryViewProps {
   onLaunchRados: (study: IngestionResult, series: SeriesCard) => void;
   onOpenImportWizard: () => void;
+  onOpenPatientInRados?: (patient: PatientRecord) => void;
 }
 
 const AO_OTA_OPTIONS = [
@@ -41,6 +43,7 @@ const AO_OTA_OPTIONS = [
 export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
   onLaunchRados,
   onOpenImportWizard,
+  onOpenPatientInRados,
 }) => {
   const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [cohorts, setCohorts] = useState<PatientCohort[]>([]);
@@ -66,9 +69,9 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
   // Fetch initial folder config
   useEffect(() => {
     fetch('/api/datum/config')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.default_data_folder) {
+      .then((res) => safeJson(res))
+      .then((data: any) => {
+        if (data && data.default_data_folder) {
           setDefaultFolder(data.default_data_folder);
           setFolderInput(data.default_data_folder);
         }
@@ -86,16 +89,18 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
       ]);
 
       if (cohortRes.ok) {
-        const cData = await cohortRes.json();
-        setCohorts(cData);
+        const cData = await safeJson<PatientCohort[]>(cohortRes);
+        if (cData) setCohorts(cData);
       }
       if (patientRes.ok) {
-        const pData: PatientRecord[] = await patientRes.json();
-        setPatients(pData);
-        if (pData.length > 0) {
-          setSelectedPatientId((prev) => (prev && pData.some((p) => p.id === prev) ? prev : pData[0].id));
-        } else {
-          setSelectedPatientId(null);
+        const pData = await safeJson<PatientRecord[]>(patientRes);
+        if (pData) {
+          setPatients(pData);
+          if (pData.length > 0) {
+            setSelectedPatientId((prev) => (prev && pData.some((p: PatientRecord) => p.id === prev) ? prev : pData[0].id));
+          } else {
+            setSelectedPatientId(null);
+          }
         }
       }
     } catch (err) {
@@ -120,21 +125,23 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
         body: JSON.stringify({ browse: true }),
       });
       if (res.ok) {
-        const data = await res.json();
-        setDefaultFolder(data.folder_path);
-        setFolderInput(data.folder_path);
-        setPatients(data.patients);
-        if (data.patients.length > 0) {
-          setSelectedPatientId(data.patients[0].id);
+        const data: any = await safeJson(res);
+        if (data) {
+          setDefaultFolder(data.folder_path);
+          setFolderInput(data.folder_path);
+          setPatients(data.patients);
+          if (data.patients.length > 0) {
+            setSelectedPatientId(data.patients[0].id);
+          }
+          setScanMessage(`Discovered and loaded ${data.patient_count} real patients.`);
         }
-        setScanMessage(`Discovered and loaded ${data.patient_count} real patients.`);
         setTimeout(() => {
           setIsFolderModalOpen(false);
           setScanMessage('');
         }, 1200);
       } else {
-        const err = await res.json();
-        setScanMessage(`Error: ${err.detail || 'Folder selection cancelled or failed.'}`);
+        const err: any = await safeJson(res);
+        setScanMessage(`Error: ${err?.detail || 'Folder selection cancelled or failed.'}`);
       }
     } catch (err: any) {
       setScanMessage(`Selection error: ${err.message || 'Failed to select folder.'}`);
@@ -154,20 +161,22 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
         body: JSON.stringify({ folder_path: path.trim() }),
       });
       if (res.ok) {
-        const data = await res.json();
-        setDefaultFolder(data.folder_path);
-        setPatients(data.patients);
-        if (data.patients.length > 0) {
-          setSelectedPatientId(data.patients[0].id);
+        const data: any = await safeJson(res);
+        if (data) {
+          setDefaultFolder(data.folder_path);
+          setPatients(data.patients);
+          if (data.patients.length > 0) {
+            setSelectedPatientId(data.patients[0].id);
+          }
+          setScanMessage(`Discovered and loaded ${data.patient_count} real patients.`);
         }
-        setScanMessage(`Discovered and loaded ${data.patient_count} real patients.`);
         setTimeout(() => {
           setIsFolderModalOpen(false);
           setScanMessage('');
         }, 1200);
       } else {
-        const err = await res.json();
-        setScanMessage(`Error: ${err.detail || 'Failed to scan directory.'}`);
+        const err: any = await safeJson(res);
+        setScanMessage(`Error: ${err?.detail || 'Failed to scan directory.'}`);
       }
     } catch (err: any) {
       setScanMessage(`Scan error: ${err.message || 'Failed to scan directory.'}`);
@@ -205,10 +214,12 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
       });
 
       if (res.ok) {
-        const updated: PatientRecord = await res.json();
-        setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 3000);
+        const updated = await safeJson<PatientRecord>(res);
+        if (updated) {
+          setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+          setSaveSuccess(true);
+          setTimeout(() => setSaveSuccess(false), 3000);
+        }
       }
     } catch (err) {
       console.error('Failed to save EDC parameters:', err);
@@ -231,12 +242,14 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const seriesToLoad = data.selected_series || data.active_series;
-        onLaunchRados(data.study, seriesToLoad);
+        const data: any = await safeJson(res);
+        if (data) {
+          const seriesToLoad = data.selected_series || data.active_series;
+          onLaunchRados(data.study, seriesToLoad);
+        }
       } else {
-        const err = await res.json();
-        alert(`Bridge error: ${err.detail || 'Could not launch study in Rados.'}`);
+        const err: any = await safeJson(res);
+        alert(`Bridge error: ${err?.detail || 'Could not launch study in Rados.'}`);
       }
     } catch (err) {
       console.error('Bridge request failed:', err);
@@ -246,9 +259,18 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
     }
   };
 
+  const handleOpenPatientInRados = (p: PatientRecord) => {
+    setSelectedPatientId(p.id);
+    if (onOpenPatientInRados) {
+      onOpenPatientInRados(p);
+    } else {
+      handleLaunchRadosForPatient(p);
+    }
+  };
+
   const handleLaunchRados = () => {
     if (selectedPatient) {
-      handleLaunchRadosForPatient(selectedPatient);
+      handleOpenPatientInRados(selectedPatient);
     }
   };
 
@@ -391,7 +413,7 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
                   <div
                     key={p.id}
                     onClick={() => setSelectedPatientId(p.id)}
-                    onDoubleClick={() => handleLaunchRadosForPatient(p)}
+                    onDoubleClick={() => handleOpenPatientInRados(p)}
                     className={`w-full px-4 py-3 grid grid-cols-12 gap-2 items-center text-xs cursor-pointer transition-all ${
                       isSelected
                         ? 'bg-sky-50/80 dark:bg-sky-950/20 border-l-4 border-l-[#0284C7]'
@@ -463,8 +485,7 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedPatientId(p.id);
-                          handleLaunchRadosForPatient(p);
+                          handleOpenPatientInRados(p);
                         }}
                         title="Open in Rados"
                         className={`w-7 h-7 rounded-lg flex items-center justify-center transition-transform cursor-pointer ${
@@ -532,9 +553,6 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
                       Ready to Bridge
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Instantly transfer this patient's CT/MR volumetric series into Rados Multi-Planar Reconstruction and 3D segmentation viewports.
-                  </p>
                   <button
                     type="button"
                     onClick={handleLaunchRados}
@@ -622,9 +640,6 @@ export const DatumRegistryView: React.FC<DatumRegistryViewProps> = ({
                     <div className="flex flex-col">
                       <span className="text-xs font-bold text-slate-900 dark:text-white">
                         Scanogram Calibration Verification
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        Full-length bilateral anatomical axis validated
                       </span>
                     </div>
                     <button

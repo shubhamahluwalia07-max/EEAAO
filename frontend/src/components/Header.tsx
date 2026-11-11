@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   Sun,
   Moon,
@@ -8,6 +8,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { ModuleType, TrackType } from '../types';
+import { Flowbar } from './Flowbar';
 
 interface HeaderProps {
   activeModule: ModuleType;
@@ -22,17 +23,6 @@ interface HeaderProps {
   onToggleCollapse: () => void;
 }
 
-const MODULES: { id: ModuleType; label: string }[] = [
-  { id: 'Account', label: 'Account' },
-  { id: 'Datum', label: 'Datum' },
-  { id: 'Rados', label: 'Rados' },
-  { id: 'Design', label: 'Design' },
-  { id: 'FEA', label: 'FEA' },
-  { id: 'Slicer', label: 'Slicer' },
-  { id: 'Print Factory', label: 'Print Factory' },
-  { id: 'I 5.0', label: 'I 5.0' },
-];
-
 export const Header: React.FC<HeaderProps> = ({
   activeModule,
   onSelectModule,
@@ -45,11 +35,6 @@ export const Header: React.FC<HeaderProps> = ({
   isCollapsed,
   onToggleCollapse,
 }) => {
-  const activeIndex = useMemo(
-    () => MODULES.findIndex((m) => m.id === activeModule),
-    [activeModule]
-  );
-
   if (isCollapsed) {
     return (
       <button
@@ -102,46 +87,8 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Center: Rotary Cylinder Flowbar with +5% Chromatic Accents */}
-      <div className="relative flex items-center justify-center overflow-hidden h-full max-w-2xl px-6">
-        <div className="flex items-center gap-1.5" style={{ perspective: '800px' }}>
-          {MODULES.map((mod, idx) => {
-            const isActive = mod.id === activeModule;
-            const offset = idx - activeIndex;
-            const distance = Math.abs(offset);
-
-            // Compute 3D cylinder arc rotation angle and depth
-            const rotY = offset * 14; // degrees
-            const transZ = -distance * 28; // px
-            const opacity = Math.max(0.35, 1 - distance * 0.18);
-            const scale = isActive ? 1.05 : Math.max(0.85, 1 - distance * 0.05);
-
-            return (
-              <button
-                key={mod.id}
-                type="button"
-                onClick={() => onSelectModule(mod.id)}
-                style={{
-                  transform: `rotateY(${rotY}deg) translateZ(${transZ}px) scale(${scale})`,
-                  opacity,
-                  transition: 'all 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
-                  transformStyle: 'preserve-3d',
-                }}
-                className={`tactile-rubber relative px-3.5 py-1.5 rounded-xl flex items-center justify-center text-xs font-bold whitespace-nowrap cursor-pointer ${
-                  isActive
-                    ? 'neu-convex text-[#0284C7] dark:text-[#38BDF8] border border-sky-300 dark:border-sky-800 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 neu-btn'
-                }`}
-              >
-                <span>{mod.label}</span>
-                {isActive && (
-                  <span className="absolute -bottom-[9px] left-3 right-3 h-[2.5px] bg-gradient-to-r from-[#0284C7] to-cyan-400 rounded-full shadow-sm shadow-sky-500/50" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* Center: Rotary Cylinder Flowbar */}
+      <Flowbar activeModule={activeModule} onSelectModule={onSelectModule} />
 
       {/* Right: Utility icon buttons with 100% Neumorphic Origin UI buttons */}
       <div className="flex items-center gap-2">

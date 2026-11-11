@@ -36,6 +36,7 @@ import { SeriesSelectorModal } from './SeriesSelectorModal';
 import { HuHistogramEditor } from './HuHistogramEditor';
 import { SeedSegmentPanel } from './SeedSegmentPanel';
 import { ImportWizardView } from './ImportWizardView';
+import { safeJson } from '../../utils/api';
 
 interface RadosViewProps {
   onNavigateModule?: (mod: ModuleType) => void;
@@ -45,6 +46,8 @@ interface RadosViewProps {
   initialPreset?: { minHu: number; maxHu: number; quality: string } | null;
   openSeriesModalInitially?: boolean;
   onOpenImportWizard?: () => void;
+  pendingImportPath?: string | null;
+  onClearPendingImport?: () => void;
 }
 
 export const RadosView: React.FC<RadosViewProps> = ({
@@ -55,6 +58,8 @@ export const RadosView: React.FC<RadosViewProps> = ({
   initialPreset,
   openSeriesModalInitially,
   onOpenImportWizard,
+  pendingImportPath,
+  onClearPendingImport,
 }) => {
   // Study and Series state
   const [activeStudy, setActiveStudy] = useState<IngestionResult | null>(initialStudy || null);
@@ -63,10 +68,15 @@ export const RadosView: React.FC<RadosViewProps> = ({
   const [isSeriesModalOpen, setIsSeriesModalOpen] = useState<boolean>(openSeriesModalInitially || false);
   const [isImportWizardOpen, setIsImportWizardOpen] = useState<boolean>(false);
 
-  // Ingestion / Loading progress
-  const [isIngesting, setIsIngesting] = useState<boolean>(false);
-  const [ingestStatus, setIngestStatus] = useState<string>('Preparing...');
+  // Step 2 Import Wizard Progress state
+  const [isIngestProgressOpen, setIsIngestProgressOpen] = useState<boolean>(false);
+  const [ingestCurrentFile, setIngestCurrentFile] = useState<string>('');
+  const [ingestProcessedCount, setIngestProcessedCount] = useState<number>(0);
+  const [ingestTotalCount, setIngestTotalCount] = useState<number>(0);
+  const [ingestElapsedSec, setIngestElapsedSec] = useState<number>(0);
+  const [ingestEtaSec, setIngestEtaSec] = useState<number>(0);
   const [ingestPercent, setIngestPercent] = useState<number>(0);
+  const [ingestStage, setIngestStage] = useState<string>('Importing DICOM Data');
 
   // Viewport navigation & crosshair state
   const [axialSlice, setAxialSlice] = useState<number>(0);
@@ -90,6 +100,7 @@ export const RadosView: React.FC<RadosViewProps> = ({
   const [masks, setMasks] = useState<MaskLayer[]>([]);
   const [selectedMaskIds, setSelectedMaskIds] = useState<string[]>([]);
   const [objects, setObjects] = useState<MeshObjectItem[]>([]);
+  const [maskMeshes, setMaskMeshes] = useState<MeshObjectItem[]>([]);
   const [isCalculatingMesh, setIsCalculatingMesh] = useState<boolean>(false);
 
   // Active Tool in bottom dock
@@ -136,42 +147,111 @@ export const RadosView: React.FC<RadosViewProps> = ({
     return () => window.removeEventListener('click', handleOutside);
   }, []);
 
-  // Ingest helper
-  const runIngest = useCallback(async (path: string) => {
-    setIsIngesting(true);
-    setIngestPercent(5);
-    setIngestStatus('Connecting to backend...');
-
+  // Fallback direct ingestion
+  const fallbackDirectIngest = useCallback(async (path: string) => {
+    setIngestStage('Importing DICOM Data');
+    setIngestCurrentFile('Analyzing DICOM slices...');
+    setIngestPercent(40);
     try {
       const res = await fetch('/api/dicom/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path }),
       });
-
-      if (!res.ok) {
-        throw new Error(await res.text());
+      const study: IngestionResult | null = await safeJson(res);
+      if (!res.ok || !study) {
+        throw new Error('Failed to ingest DICOM');
       }
-
-      const study: IngestionResult = await res.json();
       setActiveStudy(study);
       setIngestPercent(100);
-      setIngestStatus('Ingestion complete');
-      setIsIngesting(false);
-
-      // Auto-select preferred non-scout series
-      const primarySeries = study.series.find((s) => !s.is_scout) || study.series[0];
-      if (primarySeries) {
-        loadSeriesVolume(primarySeries);
-      }
+      setIngestStage('Scan complete');
+      setTimeout(() => {
+        setIsIngestProgressOpen(false);
+        setIsSeriesModalOpen(true); // STEP 3: Auto-open Series Selection Modal!
+      }, 350);
     } catch (err: any) {
-      console.error('Ingest error:', err);
-      setIsIngesting(false);
-      setIngestStatus(`Error: ${err.message || 'Failed to ingest DICOM'}`);
+      console.error('Direct ingest error:', err);
+      setIsIngestProgressOpen(false);
     }
   }, []);
 
-  // Load binary volume from backend
+  // Step 2: Stream ingestion flow with live progress
+  const runStreamIngest = useCallback((path: string) => {
+    setIsIngestProgressOpen(true);
+    setIngestCurrentFile('Connecting to DICOM data stream...');
+    setIngestPercent(5);
+    setIngestProcessedCount(0);
+    setIngestTotalCount(0);
+    setIngestElapsedSec(0);
+    setIngestEtaSec(0);
+    setIngestStage('Importing DICOM Data');
+
+    try {
+      const sse = new EventSource(`/api/dicom/ingest/stream?path=${encodeURIComponent(path)}`);
+
+      sse.onmessage = (event) => {
+        try {
+          const text = event.data;
+          const data = text ? JSON.parse(text) : null;
+          if (!data) return;
+
+          if (data.error) {
+            sse.close();
+            fallbackDirectIngest(path);
+            return;
+          }
+
+          if (data.current_file) setIngestCurrentFile(data.current_file);
+          if (data.processed_count !== undefined) setIngestProcessedCount(data.processed_count);
+          if (data.total_count !== undefined) setIngestTotalCount(data.total_count);
+          if (data.percent !== undefined) setIngestPercent(data.percent);
+          if (data.elapsed_sec !== undefined) setIngestElapsedSec(data.elapsed_sec);
+          if (data.eta_sec !== undefined) setIngestEtaSec(data.eta_sec);
+          if (data.stage) setIngestStage(data.stage);
+
+          if (data.result) {
+            sse.close();
+            const resultStudy: IngestionResult = data.result;
+            setActiveStudy(resultStudy);
+            setIngestPercent(100);
+            setIngestStage('Ready for Series Selection');
+            setTimeout(() => {
+              setIsIngestProgressOpen(false);
+              setIsSeriesModalOpen(true); // STEP 3: Auto-open Series Selection Modal!
+            }, 300);
+          } else if (data.stage === 'Complete') {
+            sse.close();
+            fallbackDirectIngest(path);
+          }
+        } catch (err) {
+          console.error('SSE parse error:', err);
+        }
+      };
+
+      sse.onerror = () => {
+        sse.close();
+        fallbackDirectIngest(path);
+      };
+    } catch {
+      fallbackDirectIngest(path);
+    }
+  }, [fallbackDirectIngest]);
+
+  // Trigger Step 2 whenever a patient is opened from Datum
+  useEffect(() => {
+    if (pendingImportPath) {
+      setSelectedSeries(null);
+      setVolumeData(null);
+      setObjects([]);
+      setMasks([]);
+      runStreamIngest(pendingImportPath);
+      if (onClearPendingImport) {
+        onClearPendingImport();
+      }
+    }
+  }, [pendingImportPath, onClearPendingImport, runStreamIngest]);
+
+  // Load binary volume from backend (Step 4 -> Step 5)
   const loadSeriesVolume = useCallback(async (series: SeriesCard) => {
     setSelectedSeries(series);
     try {
@@ -183,10 +263,10 @@ export const RadosView: React.FC<RadosViewProps> = ({
       const dataView = new DataView(arrayBuffer);
       const headerLen = dataView.getUint32(0, true);
 
-      // Decode UTF-8 JSON header
+      // Decode UTF-8 JSON header safely
       const headerBytes = new Uint8Array(arrayBuffer, 4, headerLen);
       const headerStr = new TextDecoder('utf-8').decode(headerBytes);
-      const header = JSON.parse(headerStr);
+      const header = headerStr ? JSON.parse(headerStr) : {};
 
       // Remaining bytes: raw int16 volume array
       const rawVolBuffer = arrayBuffer.slice(4 + headerLen);
@@ -200,7 +280,7 @@ export const RadosView: React.FC<RadosViewProps> = ({
       setWindowCenter(header.window_center || 40);
       setWindowWidth(header.window_width || 400);
 
-      const [w, h, d] = header.dims;
+      const [w, h, d] = header.dims || [512, 512, 1];
       setAxialSlice(Math.floor(d / 2));
       setCoronalSlice(Math.floor(h / 2));
       setSagittalSlice(Math.floor(w / 2));
@@ -237,10 +317,12 @@ export const RadosView: React.FC<RadosViewProps> = ({
     try {
       const res = await fetch(`/api/segment/masks?series_id=${seriesId}`);
       if (res.ok) {
-        const data = await res.json();
-        setMasks(data);
-        if (data.length > 0) {
-          setSelectedMaskIds([data[0].mask_id]);
+        const data: MaskLayer[] | null = await safeJson(res);
+        if (data) {
+          setMasks(data);
+          if (data.length > 0) {
+            setSelectedMaskIds([data[0].mask_id]);
+          }
         }
       }
     } catch (e) {
@@ -253,7 +335,7 @@ export const RadosView: React.FC<RadosViewProps> = ({
     try {
       const res = await fetch(`/api/objects?series_id=${seriesId}`);
       if (res.ok) {
-        const objList: MeshObjectItem[] = await res.json();
+        const objList: MeshObjectItem[] = (await safeJson<MeshObjectItem[]>(res)) || [];
         // For each object, fetch its binary vertex/normal/index payload
         const fullObjs: MeshObjectItem[] = [];
         for (const o of objList) {
@@ -269,11 +351,11 @@ export const RadosView: React.FC<RadosViewProps> = ({
             const tCount = head.num_triangles;
 
             let offset = 4 + hLen;
-            const verts = new Float32Array(buf, offset, vCount * 3);
+            const verts = new Float32Array(buf.slice(offset, offset + vCount * 3 * 4));
             offset += vCount * 3 * 4;
-            const norms = new Float32Array(buf, offset, vCount * 3);
+            const norms = new Float32Array(buf.slice(offset, offset + vCount * 3 * 4));
             offset += vCount * 3 * 4;
-            const inds = new Uint32Array(buf, offset, tCount * 3);
+            const inds = new Uint32Array(buf.slice(offset, offset + tCount * 3 * 4));
 
             fullObjs.push({
               ...o,
@@ -291,6 +373,65 @@ export const RadosView: React.FC<RadosViewProps> = ({
       console.error('Fetch objects error:', e);
     }
   };
+
+  // Fetch 3D preview meshes for masks before object calculation
+  const fetchMaskPreviewMeshes = useCallback(async (seriesId: string, maskIdList: string[]) => {
+    if (!seriesId || maskIdList.length === 0) {
+      setMaskMeshes([]);
+      return;
+    }
+    const previews: MeshObjectItem[] = [];
+    for (const mId of maskIdList) {
+      try {
+        const res = await fetch(`/api/segment/mask/${mId}/preview-mesh?series_id=${seriesId}`);
+        if (!res.ok) continue;
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength < 8) continue;
+        const dv = new DataView(buf);
+        const hLen = dv.getUint32(0, true);
+        const hStr = new TextDecoder().decode(new Uint8Array(buf, 4, hLen));
+        const head = JSON.parse(hStr);
+
+        const vCount = head.num_vertices;
+        const tCount = head.num_triangles;
+        if (vCount === 0 || tCount === 0) continue;
+
+        let offset = 4 + hLen;
+        const verts = new Float32Array(buf.slice(offset, offset + vCount * 3 * 4));
+        offset += vCount * 3 * 4;
+        const norms = new Float32Array(buf.slice(offset, offset + vCount * 3 * 4));
+        offset += vCount * 3 * 4;
+        const inds = new Uint32Array(buf.slice(offset, offset + tCount * 3 * 4));
+
+        previews.push({
+          object_id: head.object_id,
+          name: head.name,
+          color: head.color,
+          series_id: seriesId,
+          visible: true,
+          opacity: head.opacity ?? 0.88,
+          num_vertices: vCount,
+          num_triangles: tCount,
+          is_watertight: false,
+          vertices: verts,
+          normals: norms,
+          indices: inds,
+        });
+      } catch (err) {
+        console.error('Error fetching mask preview mesh:', err);
+      }
+    }
+    setMaskMeshes(previews);
+  }, []);
+
+  // Automatically update 3D mask preview meshes whenever masks or selectedMaskIds change
+  useEffect(() => {
+    if (selectedSeries && masks.length > 0 && selectedMaskIds.length > 0) {
+      fetchMaskPreviewMeshes(selectedSeries.series_instance_uid, selectedMaskIds);
+    } else {
+      setMaskMeshes([]);
+    }
+  }, [selectedSeries, masks, selectedMaskIds, fetchMaskPreviewMeshes]);
 
   // Synchronized crosshair updates
   const handleCrosshairChange = (newCrosshair: [number, number, number]) => {
@@ -558,8 +699,8 @@ export const RadosView: React.FC<RadosViewProps> = ({
         );
 
         if (res.ok) {
-          const result = await res.json();
-          setSeedStatusMsg(result.message || 'Bone masks successfully calculated');
+          const result: any = await safeJson(res);
+          setSeedStatusMsg(result?.message || 'Bone masks successfully calculated');
           await fetchMasks(selectedSeries.series_instance_uid);
           success = true;
         }
@@ -931,24 +1072,29 @@ export const RadosView: React.FC<RadosViewProps> = ({
 
         {/* Right: Import / Series Actions */}
         <div className="flex items-center gap-2">
-          {!volumeData && (
-            <button
-              type="button"
-              onClick={() => setIsImportWizardOpen(true)}
-              className="tactile-rubber neu-primary px-3.5 py-1.5 rounded-xl text-xs font-bold text-white shadow-md shadow-sky-600/30 flex items-center gap-1.5 cursor-pointer"
-            >
-              <span>Import DICOM</span>
-            </button>
-          )}
-          {activeStudy && (
-            <button
-              type="button"
-              onClick={() => setIsSeriesModalOpen(true)}
-              className="tactile-rubber neu-btn px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 hover:text-[#0284C7] cursor-pointer shadow-sm"
-            >
-              <span>Select Series</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setIsImportWizardOpen(true)}
+            className="tactile-rubber neu-primary px-3.5 py-1.5 rounded-xl text-xs font-bold text-white shadow-md shadow-sky-600/30 flex items-center gap-1.5 cursor-pointer"
+            title="Open DICOM Import Wizard"
+          >
+            <span>Import DICOM</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (activeStudy) {
+                setIsSeriesModalOpen(true);
+              } else {
+                setIsImportWizardOpen(true);
+              }
+            }}
+            className="tactile-rubber neu-btn px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 hover:text-[#0284C7] cursor-pointer shadow-sm"
+            title="Reopen Series Selection Modal"
+          >
+            <span>Select Series</span>
+          </button>
         </div>
       </div>
 
@@ -1083,6 +1229,7 @@ export const RadosView: React.FC<RadosViewProps> = ({
             <div className={`w-full h-full ${maximizedQuadrant === '3d' ? 'col-span-2 row-span-2' : ''}`}>
               <Viewport3D
                 objects={objects}
+                maskMeshes={maskMeshes}
                 isCalculating={isCalculatingMesh}
                 isMaximized={maximizedQuadrant === '3d'}
                 onToggleMaximize={() => setMaximizedQuadrant(maximizedQuadrant === '3d' ? null : '3d')}
@@ -1155,12 +1302,7 @@ export const RadosView: React.FC<RadosViewProps> = ({
                 </div>
 
                 <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 pr-1">
-                  {masks.length === 0 ? (
-                    <div className="p-6 text-center text-slate-400 text-xs">
-                      No masks generated yet. Use Threshold, Region Grow, or Seed Segment.
-                    </div>
-                  ) : (
-                    masks.map((m) => {
+                  {masks.map((m) => {
                       const isChecked = selectedMaskIds.includes(m.mask_id);
                       return (
                         <div
@@ -1191,19 +1333,13 @@ export const RadosView: React.FC<RadosViewProps> = ({
                           </div>
                         </div>
                       );
-                    })
-                  )}
+                    })}
                 </div>
               </div>
             ) : (
               /* Tab Body: Objects */
               <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 pr-1">
-                {objects.length === 0 ? (
-                  <div className="p-6 text-center text-slate-400 text-xs">
-                    No 3D objects built yet. Select masks and click Calculate 3D Object.
-                  </div>
-                ) : (
-                  objects.map((o) => (
+                {objects.map((o) => (
                     <div
                       key={o.object_id}
                       className="p-2.5 rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 flex flex-col gap-1.5 text-xs"
@@ -1243,8 +1379,7 @@ export const RadosView: React.FC<RadosViewProps> = ({
                         )}
                       </div>
                     </div>
-                  ))
-                )}
+                  ))}
               </div>
             )}
           </div>
@@ -1448,34 +1583,70 @@ export const RadosView: React.FC<RadosViewProps> = ({
       {isImportWizardOpen && (
         <div className="fixed inset-0 z-50 flex flex-col bg-[#F8FAFC] dark:bg-[#090D16] animate-in fade-in duration-150">
           <ImportWizardView
-            onCompleteImport={(study, series, preset) => {
+            onCompleteImport={(study, _series, preset) => {
               setActiveStudy(study);
-              loadSeriesVolume(series);
-              setThresholdMin(preset.minHu);
-              setThresholdMax(preset.maxHu);
+              if (preset) {
+                setThresholdMin(preset.minHu);
+                setThresholdMax(preset.maxHu);
+              }
               setIsImportWizardOpen(false);
+              setIsSeriesModalOpen(true); // STEP 3: Automatically open Series Selection Modal!
             }}
             onCancel={() => setIsImportWizardOpen(false)}
           />
         </div>
       )}
 
-      {/* Centered Ingestion Progress Modal */}
-      {isIngesting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-[360px] p-6 bg-white dark:bg-[#111827] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col items-center gap-4 text-center">
-            <span className="w-10 h-10 rounded-full border-3 border-[#0284C7] border-t-transparent animate-spin" />
-            <div className="flex flex-col gap-1">
-              <span className="font-bold text-sm text-slate-900 dark:text-white">
-                Reading DICOM Dataset...
+      {/* Step 2: Clean Import Wizard Progress View */}
+      {isIngestProgressOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg neu-convex p-8 rounded-3xl border border-white/60 dark:border-white/10 shadow-2xl flex flex-col gap-5 bg-white/95 dark:bg-[#0D131F]/95 backdrop-blur-md select-none">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl neu-primary flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-sky-500/25">
+                  MD
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+                    Importing DICOM Data
+                  </span>
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    {ingestStage}
+                  </span>
+                </div>
+              </div>
+              <span className="text-xs font-bold text-[#0284C7] bg-sky-50 dark:bg-sky-950/60 px-2.5 py-1 rounded-lg border border-sky-200 dark:border-sky-800">
+                {ingestPercent}%
               </span>
-              <span className="text-xs text-slate-500">{ingestStatus}</span>
             </div>
-            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-              <div
-                style={{ width: `${ingestPercent}%` }}
-                className="h-full bg-[#0284C7] transition-all duration-300"
-              />
+
+            {/* Current file & counters */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-xs" title={ingestCurrentFile}>
+                  {ingestCurrentFile || 'Reading instances...'}
+                </span>
+                {ingestTotalCount > 0 && (
+                  <span className="font-semibold text-slate-500 dark:text-slate-400 shrink-0">
+                    {ingestProcessedCount} / {ingestTotalCount} files
+                  </span>
+                )}
+              </div>
+
+              {/* Smooth progress bar 0% to 100% */}
+              <div className="w-full h-2.5 rounded-full neu-pressed overflow-hidden p-0.5 border border-slate-200 dark:border-slate-800">
+                <div
+                  style={{ width: `${Math.min(100, Math.max(0, ingestPercent))}%` }}
+                  className="h-full bg-gradient-to-r from-[#0284C7] to-cyan-400 rounded-full transition-all duration-200 shadow-sm shadow-sky-500/50"
+                />
+              </div>
+            </div>
+
+            {/* Timers */}
+            <div className="flex items-center justify-between pt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 border-t border-slate-200/80 dark:border-slate-800/80">
+              <span>Time elapsed: {ingestElapsedSec.toFixed(1)}s</span>
+              <span>Time left: {ingestEtaSec > 0 ? `${ingestEtaSec.toFixed(1)}s` : '--'}</span>
             </div>
           </div>
         </div>

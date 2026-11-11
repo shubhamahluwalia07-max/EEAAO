@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from services.dicom_service import dicom_service
+from services.dicom_service import dicom_service, CACHE_DIR
 from services.segmentation_service import segmentation_service
 from services.mesh_service import mesh_service
 from services.design_service import design_service
@@ -107,7 +107,7 @@ async def upload_dicom(files: List[UploadFile] = File(...)):
     if not files:
         raise HTTPException(status_code=400, detail="No files provided.")
 
-    td = tempfile.TemporaryDirectory(prefix="medam_upload_")
+    td = tempfile.TemporaryDirectory(prefix="medam_upload_", dir=CACHE_DIR)
     dicom_service.temp_dirs.append(td)
     upload_dir = td.name
 
@@ -177,6 +177,24 @@ def get_volume_binary(series_id: str):
     except Exception as ex:
         raise HTTPException(status_code=500, detail=str(ex))
 
+@app.post("/api/dicom/series/{series_id}/load")
+def load_series_volume(series_id: str):
+    try:
+        series = dicom_service.ensure_series_volume_loaded(series_id)
+        return {
+            "status": "loaded",
+            "series_id": series.series_id,
+            "dims": series.dims,
+            "spacing": series.spacing,
+            "window_center": series.window_center,
+            "window_width": series.window_width,
+            "histogram": series.histogram
+        }
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
 @app.get("/api/dicom/series/{series_id}/tags")
 def get_series_tags(series_id: str):
     try:
@@ -197,6 +215,19 @@ def get_mask_slice(mask_id: str, series_id: str = Query(...), plane: str = Query
         return Response(content=b, media_type="application/octet-stream")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/segment/mask/{mask_id}/preview-mesh")
+def get_mask_preview_mesh(mask_id: str, series_id: str = Query(...)):
+    """
+    Returns fast 3D preview surface mesh for a mask before object calculation.
+    """
+    try:
+        bin_data = mesh_service.get_mask_preview_binary(series_id, mask_id)
+        return Response(content=bin_data, media_type="application/octet-stream")
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
 
 @app.post("/api/segment/threshold")
 def threshold_mask(req: ThresholdRequest):
@@ -462,3 +493,25 @@ def design_handoff(req: HandoffRequest):
             "recommended_infill_percent": 100 if "plate" in mesh.name.lower() else 30
         }
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        reload_includes=["*.py"],
+        reload_excludes=[
+            "*.db*",
+            "*.sqlite*",
+            "*.json",
+            "*.dcm",
+            "*.zip",
+            "*.stl",
+            "data/*",
+            "temp/*",
+            "frontend/*",
+        ],
+    )
+

@@ -20,6 +20,7 @@ export const App: React.FC = () => {
   const [activeStudy, setActiveStudy] = useState<IngestionResult | null>(null);
   const [activeSeries, setActiveSeries] = useState<SeriesCard | null>(null);
   const [initialPreset, setInitialPreset] = useState<{ minHu: number; maxHu: number; quality: string } | null>(null);
+  const [pendingImportPath, setPendingImportPath] = useState<string | null>(null);
 
   // Mesh transferred from Rados to Design studio
   const [designMesh, setDesignMesh] = useState<MeshObjectItem | null>(null);
@@ -152,6 +153,14 @@ export const App: React.FC = () => {
                 setIsWizardOpen(false);
                 setActiveModule('Rados');
               }}
+              onOpenPatientInRados={(patient) => {
+                const targetPath = patient.dicom_path || 'C:\\Users\\ShubhamAhluwalia\\Downloads\\Compressed\\KAMLESH 202603583814.zip';
+                setActiveStudy(null);
+                setActiveSeries(null);
+                setPendingImportPath(targetPath);
+                setIsWizardOpen(false);
+                setActiveModule('Rados');
+              }}
               onOpenImportWizard={() => setIsWizardOpen(true)}
             />
           )
@@ -168,6 +177,8 @@ export const App: React.FC = () => {
             initialSeries={activeSeries}
             initialPreset={initialPreset}
             openSeriesModalInitially={openSeriesSelectorOnMount}
+            pendingImportPath={pendingImportPath}
+            onClearPendingImport={() => setPendingImportPath(null)}
             onOpenImportWizard={() => {
               setIsWizardOpen(true);
               setActiveModule('Datum');

@@ -4,27 +4,44 @@ import struct
 import zipfile
 import tempfile
 import time
+import hashlib
 from typing import Dict, List, Any, Optional, Tuple
 import numpy as np
 import pydicom
 from pydicom.dataset import Dataset
 import SimpleITK as sitk
 
+# Store all extracted ZIP caches and temporary DICOM files outside project repo
+CACHE_DIR = os.path.join(tempfile.gettempdir(), "medam_cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 def safe_float(val: Any, default: float = 0.0) -> float:
     if val is None or val == "":
         return float(default)
     if isinstance(val, (list, tuple)) or (hasattr(val, "__iter__") and not isinstance(val, (str, bytes))):
-        val = list(val)[0] if len(list(val)) > 0 else default
+        val_list = list(val)
+        val = val_list[0] if len(val_list) > 0 else default
     try:
         return float(val)
     except (ValueError, TypeError):
         return float(default)
 
+def safe_int(val: Any, default: int = 0) -> int:
+    if val is None or val == "":
+        return int(default)
+    if isinstance(val, (list, tuple)) or (hasattr(val, "__iter__") and not isinstance(val, (str, bytes))):
+        val_list = list(val)
+        val = val_list[0] if len(val_list) > 0 else default
+    try:
+        return int(float(val))
+    except (ValueError, TypeError):
+        return int(default)
+
 def safe_float_list(val: Any, expected_len: int, default_list: List[float]) -> List[float]:
     if val is None:
         return list(default_list)
     try:
-        res = [float(x) for x in val]
+        res = [safe_float(x) for x in val]
         return res if len(res) >= expected_len else list(default_list)
     except (ValueError, TypeError):
         return list(default_list)
@@ -52,6 +69,7 @@ class DicomSeriesData:
         self.file_paths: List[str] = []
         self.histogram: List[int] = [] # 100 bins from -1024 to +3071 HU
 
+
 class DicomService:
     def __init__(self):
         # Global in-memory storage for active study and series
@@ -62,9 +80,10 @@ class DicomService:
 
     def ingest_path(self, path_str: str, progress_callback=None) -> Dict[str, Any]:
         """
-        Scan and ingest a DICOM folder or ZIP archive.
-        Extracts metadata, groups by series, sorts slices spatially,
-        and builds HU volume arrays.
+        Fast scan and ingest of a DICOM folder or ZIP archive.
+        Uses stop_before_pixels=True to parse headers in 1-2 seconds,
+        sorting slices spatially and organizing series without loading heavy pixels.
+        Full 16-bit volume arrays are loaded on-demand when a series is selected.
         """
         clean_path = path_str.strip('\'"')
         if not os.path.exists(clean_path):
@@ -72,11 +91,14 @@ class DicomService:
 
         extracted_dir = clean_path
         if os.path.isfile(clean_path) and clean_path.lower().endswith(".zip"):
-            td = tempfile.TemporaryDirectory(prefix="medam_dicom_")
-            self.temp_dirs.append(td)
-            extracted_dir = td.name
-            with zipfile.ZipFile(clean_path, 'r') as zf:
-                zf.extractall(extracted_dir)
+            # Hash path + mtime for cache uniqueness in OS temp medam_cache
+            mtime = os.path.getmtime(clean_path)
+            cache_key = hashlib.md5(f"{clean_path}_{mtime}".encode("utf-8")).hexdigest()
+            extracted_dir = os.path.join(CACHE_DIR, cache_key)
+            if not os.path.exists(extracted_dir) or not os.listdir(extracted_dir):
+                os.makedirs(extracted_dir, exist_ok=True)
+                with zipfile.ZipFile(clean_path, 'r') as zf:
+                    zf.extractall(extracted_dir)
 
         # Collect all files
         all_filepaths = []
@@ -96,9 +118,9 @@ class DicomService:
         processed = 0
         for fpath in all_filepaths:
             processed += 1
-            if progress_callback:
+            if progress_callback and (processed % 20 == 0 or processed == total_files):
                 elapsed = time.time() - start_time
-                percent = int((processed / total_files) * 50)
+                percent = int((processed / total_files) * 95)
                 eta = (elapsed / processed) * (total_files - processed) if processed > 0 else 0
                 progress_callback({
                     "current_file": os.path.basename(fpath),
@@ -107,7 +129,7 @@ class DicomService:
                     "percent": percent,
                     "elapsed_sec": round(elapsed, 1),
                     "eta_sec": round(eta, 1),
-                    "stage": "Scanning metadata"
+                    "stage": "Scanning DICOM headers"
                 })
 
             try:
@@ -115,17 +137,17 @@ class DicomService:
                 ds = pydicom.dcmread(fpath, stop_before_pixels=True, force=True)
                 if not hasattr(ds, "SeriesInstanceUID") and not hasattr(ds, "SOPClassUID"):
                     continue
-                series_uid = getattr(ds, "SeriesInstanceUID", "default_series")
-                modality = getattr(ds, "Modality", "OT")
-                desc = getattr(ds, "SeriesDescription", f"Series {series_uid[-6:]}")
+                series_uid = str(getattr(ds, "SeriesInstanceUID", "default_series"))
+                modality = str(getattr(ds, "Modality", "OT"))
+                desc = str(getattr(ds, "SeriesDescription", f"Series {series_uid[-6:]}"))
 
                 # Safely skip non-image DICOM files (such as Modality SR or files without image pixels)
-                mod_str = str(modality).strip().upper()
+                mod_str = modality.strip().upper()
                 if mod_str in ("SR", "DOC", "KO", "PR", "REG", "FID", "RTPLAN", "RWV", "SEG", "RAW"):
                     continue
 
-                rows = safe_float(getattr(ds, "Rows", None), 0)
-                cols = safe_float(getattr(ds, "Columns", None), 0)
+                rows = safe_int(getattr(ds, "Rows", None), 0)
+                cols = safe_int(getattr(ds, "Columns", None), 0)
                 if rows <= 0 or cols <= 0:
                     continue
 
@@ -166,10 +188,7 @@ class DicomService:
         self.active_study_id = study_id
         series_summaries = []
 
-        series_idx = 0
-        total_series = len(series_groups)
         for s_uid, slice_list in series_groups.items():
-            series_idx += 1
             # Sort slices along the normal vector
             slice_list.sort(key=lambda item: item[0])
 
@@ -223,90 +242,14 @@ class DicomService:
             series_data.origin = safe_float_list(getattr(first_ds, "ImagePositionPatient", None), 3, [0.0, 0.0, 0.0])
             series_data.direction = safe_float_list(getattr(first_ds, "ImageOrientationPatient", None), 6, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
 
-            # Load full pixel data and construct 3D HU volume
-            if progress_callback:
-                progress_callback({
-                    "current_file": f"Volume construction {meta['description']}",
-                    "processed_count": series_idx,
-                    "total_count": total_series,
-                    "percent": 50 + int((series_idx / total_series) * 50),
-                    "elapsed_sec": round(time.time() - start_time, 1),
-                    "eta_sec": 0,
-                    "stage": f"Building 3D volume for {meta['description']}"
-                })
-
-            sorted_fpaths = [item[1] for item in slice_list]
-            vol_loaded = False
-            try:
-                reader = sitk.ImageSeriesReader()
-                reader.SetFileNames(sorted_fpaths)
-                sitk_vol = reader.Execute()
-                vol_arr = sitk.GetArrayFromImage(sitk_vol) # (depth, height, width)
-                if vol_arr.ndim == 4:
-                    vol_arr = vol_arr[..., 0]
-                elif vol_arr.ndim == 2:
-                    vol_arr = np.expand_dims(vol_arr, axis=0)
-                d, h, w = vol_arr.shape[:3]
-                vol_arr = vol_arr.reshape((d, h, w))
-                vol_int16 = np.clip(vol_arr, -1024, 3071).astype(np.int16)
-                series_data.volume_hu = vol_int16
-                series_data.dims = [w, h, d]
-                hist, _ = np.histogram(vol_int16, bins=100, range=(-1024, 3071))
-                series_data.histogram = hist.tolist()
-                vol_loaded = True
-            except Exception:
-                vol_loaded = False
-
-            if not vol_loaded:
-                volume_slices = []
-                for fpath in sorted_fpaths:
-                    try:
-                        sitk_slice = sitk.ReadImage(fpath)
-                        arr = sitk.GetArrayFromImage(sitk_slice)
-                        if arr.ndim == 3 and arr.shape[0] == 1:
-                            arr = arr[0]
-                        elif arr.ndim == 3 and arr.shape[2] in (3, 4):
-                            arr = arr[:, :, 0]
-                        elif arr.ndim > 2:
-                            arr = arr.reshape((arr.shape[-2], arr.shape[-1]))
-                        volume_slices.append(arr.astype(np.float32))
-                    except Exception:
-                        try:
-                            full_ds = pydicom.dcmread(fpath, force=True)
-                            arr = full_ds.pixel_array.astype(np.float32)
-                            if arr.ndim == 3 and arr.shape[2] in (3, 4):
-                                arr = arr[:, :, 0]
-                            elif arr.ndim == 3 and arr.shape[0] == 1:
-                                arr = arr[0]
-                            elif arr.ndim > 2:
-                                arr = arr.reshape((arr.shape[-2], arr.shape[-1]))
-                            slope = safe_float(getattr(full_ds, "RescaleSlope", 1.0), 1.0)
-                            intercept = safe_float(getattr(full_ds, "RescaleIntercept", 0.0), 0.0)
-                            volume_slices.append(arr * slope + intercept)
-                        except Exception:
-                            continue
-
-                if volume_slices:
-                    vol_np = np.stack(volume_slices, axis=0)
-                    if vol_np.ndim == 4:
-                        vol_np = vol_np[..., 0]
-                    elif vol_np.ndim == 2:
-                        vol_np = np.expand_dims(vol_np, axis=0)
-                    d, h, w = vol_np.shape[:3]
-                    vol_np = vol_np.reshape((d, h, w))
-                    vol_int16 = np.clip(vol_np, -1024, 3071).astype(np.int16)
-                    series_data.volume_hu = vol_int16
-                    series_data.dims = [w, h, d]
-                    hist, _ = np.histogram(vol_int16, bins=100, range=(-1024, 3071))
-                    series_data.histogram = hist.tolist()
-                else:
-                    series_data.dims = [512, 512, len(slice_list)]
-                    series_data.volume_hu = np.zeros((len(slice_list), 512, 512), dtype=np.int16)
-                    series_data.histogram = [0] * 100
+            cols = safe_int(getattr(first_ds, "Columns", 512), 512)
+            rows = safe_int(getattr(first_ds, "Rows", 512), 512)
+            depth = len(slice_list)
+            series_data.dims = [cols, rows, depth]
 
             self.series_store[s_uid] = series_data
 
-            is_scout = "scout" in meta["description"].lower() or "surview" in meta["description"].lower() or len(slice_list) <= 3
+            is_scout = "scout" in meta["description"].lower() or "surview" in meta["description"].lower() or "topogram" in meta["description"].lower() or len(slice_list) <= 3
             series_summaries.append({
                 "series_instance_uid": s_uid,
                 "series_description": meta["description"],
@@ -321,6 +264,17 @@ class DicomService:
                 "raw_tags": series_data.raw_tags[:50]
             })
 
+        if progress_callback:
+            progress_callback({
+                "current_file": "Headers processed",
+                "processed_count": total_files,
+                "total_count": total_files,
+                "percent": 99,
+                "elapsed_sec": round(time.time() - start_time, 1),
+                "eta_sec": 0,
+                "stage": "Header scanning complete"
+            })
+
         study_summary = {
             "study_id": study_id,
             "patient_name": series_summaries[0]["patient_name"] if series_summaries else "Anonymous",
@@ -330,15 +284,100 @@ class DicomService:
         self.studies[study_id] = study_summary
         return study_summary
 
+    def ensure_series_volume_loaded(self, series_id: str) -> DicomSeriesData:
+        """
+        Loads the 16-bit pixel array and builds HU volume array for a chosen series.
+        Only executed when the specific series is loaded (Step 4 / 5).
+        """
+        if series_id not in self.series_store:
+            raise KeyError(f"Series {series_id} not found.")
+
+        series_data = self.series_store[series_id]
+        if series_data.volume_hu is not None:
+            return series_data
+
+        sorted_fpaths = series_data.file_paths
+        if not sorted_fpaths:
+            raise ValueError(f"Series {series_id} has no DICOM file paths.")
+
+        vol_loaded = False
+        try:
+            reader = sitk.ImageSeriesReader()
+            reader.SetFileNames(sorted_fpaths)
+            sitk_vol = reader.Execute()
+            vol_arr = sitk.GetArrayFromImage(sitk_vol) # (depth, height, width)
+            if vol_arr.ndim == 4:
+                vol_arr = vol_arr[..., 0]
+            elif vol_arr.ndim == 2:
+                vol_arr = np.expand_dims(vol_arr, axis=0)
+            d, h, w = vol_arr.shape[:3]
+            vol_arr = vol_arr.reshape((d, h, w))
+            vol_int16 = np.clip(vol_arr, -1024, 3071).astype(np.int16)
+            series_data.volume_hu = vol_int16
+            series_data.dims = [w, h, d]
+            hist, _ = np.histogram(vol_int16, bins=100, range=(-1024, 3071))
+            series_data.histogram = hist.tolist()
+            vol_loaded = True
+        except Exception:
+            vol_loaded = False
+
+        if not vol_loaded:
+            volume_slices = []
+            for fpath in sorted_fpaths:
+                try:
+                    sitk_slice = sitk.ReadImage(fpath)
+                    arr = sitk.GetArrayFromImage(sitk_slice)
+                    if arr.ndim == 3 and arr.shape[0] == 1:
+                        arr = arr[0]
+                    elif arr.ndim == 3 and arr.shape[2] in (3, 4):
+                        arr = arr[:, :, 0]
+                    elif arr.ndim > 2:
+                        arr = arr.reshape((arr.shape[-2], arr.shape[-1]))
+                    volume_slices.append(arr.astype(np.float32))
+                except Exception:
+                    try:
+                        full_ds = pydicom.dcmread(fpath, force=True)
+                        arr = full_ds.pixel_array.astype(np.float32)
+                        if arr.ndim == 3 and arr.shape[2] in (3, 4):
+                            arr = arr[:, :, 0]
+                        elif arr.ndim == 3 and arr.shape[0] == 1:
+                            arr = arr[0]
+                        elif arr.ndim > 2:
+                            arr = arr.reshape((arr.shape[-2], arr.shape[-1]))
+                        slope = safe_float(getattr(full_ds, "RescaleSlope", 1.0), 1.0)
+                        intercept = safe_float(getattr(full_ds, "RescaleIntercept", 0.0), 0.0)
+                        volume_slices.append(arr * slope + intercept)
+                    except Exception:
+                        continue
+
+            if volume_slices:
+                vol_np = np.stack(volume_slices, axis=0)
+                if vol_np.ndim == 4:
+                    vol_np = vol_np[..., 0]
+                elif vol_np.ndim == 2:
+                    vol_np = np.expand_dims(vol_np, axis=0)
+                d, h, w = vol_np.shape[:3]
+                vol_np = vol_np.reshape((d, h, w))
+                vol_int16 = np.clip(vol_np, -1024, 3071).astype(np.int16)
+                series_data.volume_hu = vol_int16
+                series_data.dims = [w, h, d]
+                hist, _ = np.histogram(vol_int16, bins=100, range=(-1024, 3071))
+                series_data.histogram = hist.tolist()
+            else:
+                depth = len(sorted_fpaths)
+                cols, rows = series_data.dims[0] or 512, series_data.dims[1] or 512
+                series_data.dims = [cols, rows, depth]
+                series_data.volume_hu = np.zeros((depth, rows, cols), dtype=np.int16)
+                series_data.histogram = [0] * 100
+
+        return series_data
+
     def get_series_volume_binary(self, series_id: str) -> bytes:
         """
         Packs metadata JSON header + raw int16 volume buffer into a fast binary payload:
         [uint32 header_length] + [UTF-8 JSON header bytes] + [int16 raw volume bytes]
         """
-        if series_id not in self.series_store:
-            raise KeyError(f"Series {series_id} not found.")
-
-        series = self.series_store[series_id]
+        series = self.ensure_series_volume_loaded(series_id)
         if series.volume_hu is None:
             raise ValueError(f"Series {series_id} has no pixel data loaded.")
 
@@ -370,6 +409,7 @@ class DicomService:
         if series_id not in self.series_store:
             raise KeyError(f"Series {series_id} not found.")
         return self.series_store[series_id].raw_tags
+
 
 # Global instance
 dicom_service = DicomService()

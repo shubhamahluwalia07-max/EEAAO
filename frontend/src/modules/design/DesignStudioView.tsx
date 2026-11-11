@@ -24,6 +24,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { MeshObjectItem, ModuleType, DesignMeshItem } from '../../types';
+import { safeJson } from '../../utils/api';
 
 interface DesignStudioViewProps {
   activeMesh: MeshObjectItem | null;
@@ -204,9 +205,11 @@ export const DesignStudioView: React.FC<DesignStudioViewProps> = ({
             body: JSON.stringify({ object_id: activeMesh.object_id }),
           });
           if (res.ok) {
-            const data = await res.json();
-            setSessionMeshes([data.mesh]);
-            setStatusMessage(`Loaded ${data.mesh.name} from Rados`);
+            const data: any = await safeJson(res);
+            if (data?.mesh) {
+              setSessionMeshes([data.mesh]);
+              setStatusMessage(`Loaded ${data.mesh.name} from Rados`);
+            }
           }
         } catch (err) {
           console.error('Failed to bridge mesh to design session:', err);
@@ -216,7 +219,7 @@ export const DesignStudioView: React.FC<DesignStudioViewProps> = ({
         try {
           const res = await fetch('/api/design/session/meshes');
           if (res.ok) {
-            const list: DesignMeshItem[] = await res.json();
+            const list: DesignMeshItem[] = (await safeJson<DesignMeshItem[]>(res)) || [];
             setSessionMeshes(list);
             if (list.length > 0) {
               setSelectedMeshId(list[0].mesh_id);
@@ -352,10 +355,12 @@ export const DesignStudioView: React.FC<DesignStudioViewProps> = ({
       });
 
       if (res.ok) {
-        const data = await res.json();
-        setSessionMeshes((prev) => [...prev, data.result_mesh]);
-        setSelectedMeshId(data.result_mesh.mesh_id);
-        setStatusMessage('Osteotomy resection plane applied successfully.');
+        const data: any = await safeJson(res);
+        if (data?.result_mesh) {
+          setSessionMeshes((prev) => [...prev, data.result_mesh]);
+          setSelectedMeshId(data.result_mesh.mesh_id);
+          setStatusMessage('Osteotomy resection plane applied successfully.');
+        }
       }
     } catch (err) {
       console.error('Cut failed:', err);
@@ -384,9 +389,11 @@ export const DesignStudioView: React.FC<DesignStudioViewProps> = ({
       });
 
       if (res.ok) {
-        const data = await res.json();
-        setSessionMeshes((prev) => [...prev, data.guide_mesh]);
-        setStatusMessage(`Drill sleeve (${drillDiameter}mm) created.`);
+        const data: any = await safeJson(res);
+        if (data?.guide_mesh) {
+          setSessionMeshes((prev) => [...prev, data.guide_mesh]);
+          setStatusMessage(`Drill sleeve (${drillDiameter}mm) created.`);
+        }
       }
     } catch (err) {
       console.error('Drill guide failed:', err);
@@ -413,9 +420,11 @@ export const DesignStudioView: React.FC<DesignStudioViewProps> = ({
       });
 
       if (res.ok) {
-        const data = await res.json();
-        setSessionMeshes((prev) => [...prev, data.plate_mesh]);
-        setStatusMessage(`Surgical plate (${plateThickness}mm) lofted successfully.`);
+        const data: any = await safeJson(res);
+        if (data?.plate_mesh) {
+          setSessionMeshes((prev) => [...prev, data.plate_mesh]);
+          setStatusMessage(`Surgical plate (${plateThickness}mm) lofted successfully.`);
+        }
       }
     } catch (err) {
       console.error('Plate loft failed:', err);
@@ -441,9 +450,11 @@ export const DesignStudioView: React.FC<DesignStudioViewProps> = ({
       });
 
       if (res.ok) {
-        const data = await res.json();
-        setSessionMeshes((prev) => [...prev, data.mirrored_mesh]);
-        setStatusMessage('Contralateral anatomy mirrored.');
+        const data: any = await safeJson(res);
+        if (data?.mirrored_mesh) {
+          setSessionMeshes((prev) => [...prev, data.mirrored_mesh]);
+          setStatusMessage('Contralateral anatomy mirrored.');
+        }
       }
     } catch (err) {
       console.error('Mirror failed:', err);

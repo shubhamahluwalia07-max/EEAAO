@@ -5,7 +5,7 @@ echo ===================================================
 
 cd /d "%~dp0"
 
-start "MEDAM Backend (FastAPI)" cmd /c "backend\.venv\Scripts\uvicorn.exe main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload"
+start "MEDAM Backend (FastAPI)" cmd /c "cd /d "%~dp0backend" && .venv\Scripts\python.exe main.py"
 
 timeout /t 2 /nobreak >nul
 

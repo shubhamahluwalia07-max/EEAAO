@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { IngestionResult, SeriesCard } from '../../types';
+import { safeJson } from '../../utils/api';
 
 async function extractFilesFromDataTransfer(
   items: DataTransferItemList | null,
@@ -115,14 +116,17 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
         });
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
-          throw new Error(err.detail || 'Failed to ingest DICOM dataset');
+          const err: any = await safeJson(res);
+          throw new Error(err?.detail || 'Failed to ingest DICOM dataset');
         }
 
-        setScanProgress(90);
-        setScanStatus('Constructing volume...');
+        setScanProgress(95);
+        setScanStatus('Finalizing...');
 
-        const study: IngestionResult = await res.json();
+        const study = await safeJson<IngestionResult>(res);
+        if (!study) {
+          throw new Error('Received empty response from DICOM ingestion');
+        }
         const primary = study.series.find((s) => !s.is_scout) || study.series[0];
 
         setIsScanning(false);

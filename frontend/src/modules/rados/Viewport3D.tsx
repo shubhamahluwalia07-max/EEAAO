@@ -5,6 +5,7 @@ import { MeshObjectItem } from '../../types';
 
 interface Viewport3DProps {
   objects: MeshObjectItem[];
+  maskMeshes?: MeshObjectItem[];
   isCalculating: boolean;
   isMaximized: boolean;
   onToggleMaximize: () => void;
@@ -13,6 +14,7 @@ interface Viewport3DProps {
 
 export const Viewport3D: React.FC<Viewport3DProps> = ({
   objects,
+  maskMeshes = [],
   isCalculating,
   isMaximized,
   onToggleMaximize,
@@ -130,7 +132,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     };
   }, []);
 
-  // Update meshes when objects change
+  // Update meshes when objects or mask previews change
   useEffect(() => {
     const meshGroup = meshGroupRef.current;
     if (!meshGroup) return;
@@ -144,7 +146,10 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       meshGroup.remove(child);
     }
 
-    objects.forEach((obj) => {
+    const hasVisibleObjs = objects.some((o) => o.visible && o.vertices && o.vertices.length > 0);
+    const meshesToRender = hasVisibleObjs ? objects : maskMeshes;
+
+    meshesToRender.forEach((obj) => {
       if (!obj.visible || !obj.vertices || obj.vertices.length === 0) return;
 
       const geom = new THREE.BufferGeometry();
@@ -159,14 +164,13 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       }
 
       geom.computeBoundingSphere();
-      const center = geom.boundingSphere ? geom.boundingSphere.center : new THREE.Vector3();
       // Center mesh around origin
       geom.center();
 
       const mat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(obj.color),
-        roughness: 0.35,
-        metalness: 0.15,
+        roughness: hasVisibleObjs ? 0.35 : 0.45,
+        metalness: hasVisibleObjs ? 0.15 : 0.05,
         transparent: obj.opacity < 1.0,
         opacity: obj.opacity,
         side: THREE.DoubleSide,
@@ -177,7 +181,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     });
 
     (window as any).__renderViewport3D?.();
-  }, [objects]);
+  }, [objects, maskMeshes]);
 
   // Native non-passive wheel listener to eliminate passive violation errors
   useEffect(() => {
@@ -245,7 +249,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const ptY = projectTriad(0, 1, 0);
   const ptZ = projectTriad(0, 0, 1);
 
-  const hasVisibleObjects = objects.some((o) => o.visible);
+  const hasVisibleObjects = objects.some((o) => o.visible && o.vertices && o.vertices.length > 0);
+  const hasVisibleMasks = !hasVisibleObjects && maskMeshes.some((m) => m.visible && m.vertices && m.vertices.length > 0);
 
   return (
     <div
@@ -259,11 +264,18 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       {/* Three.js Canvas */}
       <canvas ref={canvasRef} className="w-full h-full block cursor-grab active:cursor-grabbing" />
 
-      {/* Top Left Title Badge with Sapphire Blue Accent */}
+      {/* Top Left Title Badge */}
       <div className="absolute top-2.5 left-2.5 z-20 flex items-center gap-2 pointer-events-none">
-        <span className="font-extrabold text-[11px] tracking-wider uppercase bg-sky-950/70 border border-sky-500/40 text-sky-300 px-2.5 py-0.5 rounded-lg shadow-md backdrop-blur-md">
-          3D Objects View
-        </span>
+        {hasVisibleMasks ? (
+          <span className="font-extrabold text-[11px] tracking-wider uppercase bg-cyan-950/80 border border-cyan-500/50 text-cyan-300 px-2.5 py-0.5 rounded-lg shadow-md backdrop-blur-md flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#06B6D4] animate-pulse" />
+            3D Mask Preview
+          </span>
+        ) : (
+          <span className="font-extrabold text-[11px] tracking-wider uppercase bg-sky-950/70 border border-sky-500/40 text-sky-300 px-2.5 py-0.5 rounded-lg shadow-md backdrop-blur-md">
+            3D Objects View
+          </span>
+        )}
       </div>
 
       {/* Rotating Blue Circular Spinner when Calculating */}
@@ -283,8 +295,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         {isMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
       </button>
 
-      {/* Center Prompt when no 3D objects are calculated */}
-      {!hasVisibleObjects && !isCalculating && (
+      {/* Center Prompt when neither 3D objects nor masks are present */}
+      {!hasVisibleObjects && !hasVisibleMasks && !isCalculating && (
         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10 pointer-events-none">
           <button
             type="button"
@@ -292,6 +304,19 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             className="pointer-events-auto tactile-rubber neu-primary px-6 py-3 rounded-2xl text-xs font-bold shadow-2xl shadow-sky-600/40 border border-sky-400/50 cursor-pointer"
           >
             Calculate 3D Object
+          </button>
+        </div>
+      )}
+
+      {/* Floating Bottom-Right Calculate Button when 3D mask preview is visible */}
+      {hasVisibleMasks && !isCalculating && (
+        <div className="absolute bottom-3 right-3 z-20 pointer-events-auto">
+          <button
+            type="button"
+            onClick={onBuild3DClick}
+            className="tactile-rubber neu-primary px-4 py-2 rounded-xl text-xs font-bold shadow-xl shadow-sky-600/40 border border-sky-400/50 flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>Calculate 3D Object</span>
           </button>
         </div>
       )}

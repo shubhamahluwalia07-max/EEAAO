@@ -5,7 +5,7 @@ import time
 from typing import Dict, List, Any, Optional
 import numpy as np
 import vtk
-from vtk.util import numpy_support
+from vtkmodules.util import numpy_support
 
 from .dicom_service import dicom_service
 from .segmentation_service import segmentation_service
@@ -136,6 +136,16 @@ class MeshService:
 
         polydata = surface.GetOutput()
 
+        # Optimize polygon count if raw extraction produces excessive polygons (>350k)
+        num_raw_polys = polydata.GetNumberOfPolys()
+        if num_raw_polys > 350000:
+            target_red = min(0.65, 1.0 - (200000.0 / num_raw_polys))
+            pre_dec = vtk.vtkQuadricDecimation()
+            pre_dec.SetInputData(polydata)
+            pre_dec.SetTargetReduction(target_red)
+            pre_dec.Update()
+            polydata = pre_dec.GetOutput()
+
         # 4. Volume-preserving smoothing (Windowed Sinc)
         if smooth_iterations > 0:
             smoother = vtk.vtkWindowedSincPolyDataFilter()
@@ -240,6 +250,10 @@ class MeshService:
         }
 
         header_bytes = json.dumps(header).encode("utf-8")
+        # Pad header with spaces to ensure 4-byte alignment for binary float/int buffers
+        pad_len = (4 - (len(header_bytes) % 4)) % 4
+        if pad_len > 0:
+            header_bytes += b" " * pad_len
         header_len = len(header_bytes)
 
         prefix = struct.pack("<I", header_len)
@@ -248,6 +262,104 @@ class MeshService:
         indices_bytes = obj.indices.tobytes()
 
         return prefix + header_bytes + verts_bytes + normals_bytes + indices_bytes
+
+    def get_mask_preview_binary(self, series_id: str, mask_id: str) -> bytes:
+        """
+        Fast 3D iso-surface preview of a segmentation mask.
+        Optimized for instant interactivity before full watertight CAD calculation.
+        """
+        if series_id not in dicom_service.series_store:
+            raise KeyError(f"Series {series_id} not loaded.")
+
+        series = dicom_service.series_store[series_id]
+        masks_registry = segmentation_service._get_or_create_series_masks(series_id)
+        if mask_id not in masks_registry:
+            raise KeyError(f"Mask {mask_id} not found.")
+
+        mask = masks_registry[mask_id]
+        if not np.any(mask.data):
+            header = {
+                "object_id": f"mask_preview_{mask_id}",
+                "name": mask.name,
+                "color": mask.color,
+                "series_id": series_id,
+                "num_vertices": 0,
+                "num_triangles": 0,
+                "opacity": 0.88,
+                "is_watertight": False
+            }
+            header_bytes = json.dumps(header).encode("utf-8")
+            pad_len = (4 - (len(header_bytes) % 4)) % 4
+            if pad_len > 0:
+                header_bytes += b" " * pad_len
+            return struct.pack("<I", len(header_bytes)) + header_bytes
+
+        # Zero-pad by 1 voxel for boundary
+        padded = np.pad(mask.data, pad_width=1, mode='constant', constant_values=0)
+        pd, ph, pw = padded.shape
+        sx, sy, sz = series.spacing
+
+        image_data = vtk.vtkImageData()
+        image_data.SetDimensions(pw, ph, pd)
+        image_data.SetSpacing(sx, sy, sz)
+        image_data.SetOrigin(series.origin[0] - sx, series.origin[1] - sy, series.origin[2] - sz)
+
+        vtk_arr = numpy_support.numpy_to_vtk(padded.ravel(), deep=True, array_type=vtk.VTK_UNSIGNED_CHAR)
+        vtk_arr.SetName("Scalars")
+        image_data.GetPointData().SetScalars(vtk_arr)
+
+        current_input = image_data
+        if pw >= 4 and ph >= 4 and pd >= 4:
+            shrink = vtk.vtkImageShrink3D()
+            shrink.SetInputData(image_data)
+            shrink.SetShrinkFactors(2, 2, 2)
+            shrink.AveragingOff()
+            shrink.Update()
+            current_input = shrink.GetOutput()
+
+        surface = vtk.vtkFlyingEdges3D()
+        surface.SetInputData(current_input)
+        surface.SetValue(0, 0.5)
+        surface.ComputeNormalsOn()
+        surface.Update()
+
+        polydata = surface.GetOutput()
+        points = polydata.GetPoints()
+        num_pts = points.GetNumberOfPoints() if points else 0
+        verts_np = numpy_support.vtk_to_numpy(points.GetData()).astype(np.float32) if num_pts > 0 else np.empty((0, 3), dtype=np.float32)
+
+        p_normals = polydata.GetPointData().GetNormals()
+        normals_np = numpy_support.vtk_to_numpy(p_normals).astype(np.float32) if p_normals else np.empty((0, 3), dtype=np.float32)
+
+        polys = polydata.GetPolys()
+        num_cells = polydata.GetNumberOfPolys()
+        indices_list = []
+        if polys and num_cells > 0:
+            id_list = vtk.vtkIdList()
+            polys.InitTraversal()
+            while polys.GetNextCell(id_list):
+                if id_list.GetNumberOfIds() == 3:
+                    indices_list.extend([id_list.GetId(0), id_list.GetId(1), id_list.GetId(2)])
+        indices_np = np.array(indices_list, dtype=np.uint32)
+
+        header = {
+            "object_id": f"mask_preview_{mask_id}",
+            "name": f"{mask.name} (3D Preview)",
+            "color": mask.color,
+            "series_id": series_id,
+            "num_vertices": num_pts,
+            "num_triangles": len(indices_list) // 3,
+            "opacity": 0.88,
+            "is_watertight": False
+        }
+        header_bytes = json.dumps(header).encode("utf-8")
+        pad_len = (4 - (len(header_bytes) % 4)) % 4
+        if pad_len > 0:
+            header_bytes += b" " * pad_len
+        header_len = len(header_bytes)
+        prefix = struct.pack("<I", header_len)
+
+        return prefix + header_bytes + verts_np.tobytes() + normals_np.tobytes() + indices_np.tobytes()
 
     def export_stl(self, object_id: str) -> bytes:
         """
